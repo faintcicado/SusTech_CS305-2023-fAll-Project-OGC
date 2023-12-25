@@ -77,6 +77,7 @@ class Server:
             uri = "index.html"
         file_path = pathlib.Path(__file__).parent / uri
         print('file_path: %s' % file_path)
+
         # 检查里路径里是否存在该文件
         if not file_path.is_file():
             connection.send(self.create_response(404, "File Not Found"))
