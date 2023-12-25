@@ -15,7 +15,8 @@ import json
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Simple file manager server")
-    parser.add_argument("-p", "--port", type=int, default=8000, help="The port to listen on")
+    parser.add_argument("-p", "--port", type=int, default=8080, help="The port to listen on")
+    parser.add_argument("-i", "--host", type=str, default='localhost', help="The host")
     return parser.parse_args()
 
 
@@ -24,11 +25,15 @@ class FileManagerServer:
         self.port = port
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # 将server绑定到指定host和port上
         self.server_socket.bind(("localhost", self.port))
+        # 最多等待10个客户端的链接
+        # 启动server
         self.server_socket.listen(10)
 
     def run(self):
         while True:
+            # 返回一个用来传输数据的socket -> connection
             connection, address = self.server_socket.accept()
             self.handle_connection(connection, address)
 
@@ -41,29 +46,36 @@ class FileManagerServer:
 
     def receive_request(self, connection):
         request = b""
+
         while True:
+            # 阻塞程序，持续接收数据
             chunk = connection.recv(1024)
             request += chunk
+            # 当接收到\r\n\r\n时，报文结束
             if chunk.endswith(b"\r\n\r\n"):
                 break
         return request.decode("utf-8")
 
     def handle_request(self, request, connection):
-        method, uri, headers = request.split("\r\n", 2)
-        method = method.upper()
-        if method == "GET":
-            self.handle_get_request(uri, connection)
-        elif method == "POST":
-            self.handle_post_request(uri, connection)
-        elif method == "DELETE":
-            self.handle_delete_request(uri, connection)
+        request_line, request_header, request_payload = request.split("\r\n", 2)
+        print(request_line, request_header, request_payload)
+        request_line = request_line.upper()
+        if request_line.startswith("GET"):
+            self.handle_get_request(request_header, connection)
+        elif request_line.startswith("POST"):
+            self.handle_post_request(request_header, connection)
+        elif request_line.startswith("DELETE"):
+            self.handle_delete_request(request_header, connection)
         else:
             connection.send(self.create_response(405, "Method Not Allowed"))
 
     def handle_get_request(self, uri, connection):
+        print ('Handling GET request')
         if uri == "/":
             uri = "index.html"
         file_path = pathlib.Path(__file__).parent / uri
+        print('file_path: %s' % file_path)
+        # 检查里路径里是否存在该文件
         if not file_path.is_file():
             connection.send(self.create_response(404, "File Not Found"))
             return
