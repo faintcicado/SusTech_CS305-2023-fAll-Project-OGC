@@ -19,7 +19,7 @@ def parse_args():
     return parser.parse_args()
 
 
-class FileManagerServer:
+class server:
     def __init__(self, port):
         self.port = port
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -90,11 +90,18 @@ class FileManagerServer:
         response += f"Content-Length: {len(response)}\r\n"
         response += "\r\n"
         return response.encode("utf-8")
+    
+    # add simple authentication function for this server following rfc7235
+    def authenticate(self, connection):
+        connection.send(self.create_response(401, "Unauthorized"))
+        connection.close()
+        
+        return
 
 
 def main():
     args = parse_args()
-    server = FileManagerServer(args.port)
+    server = server(args.port)
     server.run()
 
 
