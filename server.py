@@ -20,7 +20,7 @@ def parse_args():
     return parser.parse_args()
 
 
-class server:
+class Server:
     def __init__(self, port):
         self.port = port
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -57,20 +57,22 @@ class server:
         return request.decode("utf-8")
 
     def handle_request(self, request, connection):
-        request_line, request_header, request_payload = request.split("\r\n", 2)
-        print(request_line, request_header, request_payload)
+        request_line= request.split("\r\n", 2)[0]
         request_line = request_line.upper()
         if request_line.startswith("GET"):
-            self.handle_get_request(request_header, connection)
+            self.handle_get_request(request, connection)
         elif request_line.startswith("POST"):
-            self.handle_post_request(request_header, connection)
+            self.handle_post_request(request, connection)
         elif request_line.startswith("DELETE"):
-            self.handle_delete_request(request_header, connection)
+            self.handle_delete_request(request, connection)
         else:
             connection.send(self.create_response(405, "Method Not Allowed"))
 
-    def handle_get_request(self, uri, connection):
+    def handle_get_request(self, request, connection):
+
+        request_line, request_header, request_payload = request.split("\r\n", 2)
         print ('Handling GET request')
+        uri = request_line.split(" ")[1]
         if uri == "/":
             uri = "index.html"
         file_path = pathlib.Path(__file__).parent / uri
@@ -113,7 +115,7 @@ class server:
 
 def main():
     args = parse_args()
-    server = server(args.port)
+    server = Server(args.port)
     server.run()
 
 
