@@ -75,6 +75,13 @@ class Server:
         # request_line =  "GET / HTTP/1.1\r\n"
         request_line= request.split("\r\n", 2)[0]
         request_line = request_line.upper()
+        # authenticate the username and password
+
+        if(self.authenticate(request, connection)):
+            pass
+        else:
+            return
+            
         if request_line.startswith("GET"):
             # 将整个请求传入进行处理
             self.handle_get_request(request, connection)
@@ -125,7 +132,7 @@ class Server:
     # 返回值：keep-alive
     # please make sure that every header is strictly splited by “ ： ”, its also level-sensitive
     # ----------------------------------------------------------------
-    def request_header_extractor(request_header, target_header, connection):
+    def request_header_extractor(self, request_header, target_header):
         connection_status = [i for i in request_header.splitlines() if i.startswith(target_header)][0].split(' : ')[1]
         return connection_status
 
@@ -137,35 +144,25 @@ class Server:
         return response.encode("utf-8")
     
     # add simple authentication function for this server following rfc7235
-    def authenticate(self, connection):
-        # get the authentication information from the client
-        request = self.receive_request(connection)
+    def authenticate(self, request, connection):
+        # using request_header_extractor to extract the Authorization header 
+        # and then using the base64 to decode the username and password then compare with the local file (not that complicated through)
+        # then return the status code to client then return true or false to the main function
+
+        #TODO: test this function
+        #TODO: how to use request_header_extractor
         request_line, request_header, request_payload = request.split("\r\n", 2)
-        print(request_line, request_header, request_payload)
-        request_line = request_line.upper()
-        if request_line.startswith("GET"):
-            uri = request_header
-        elif request_line.startswith("POST"):
-            uri = request_header
-        elif request_line.startswith("DELETE"):
-            uri = request_header
+        authorization = self.request_header_extractor(request_header, 'Authorization')
+        username, password = base64.b64decode(authorization.split(' ')[1]).decode('utf-8').split(':')
+        print('username: %s\n' % username)
+        print('password: %s\n' % password)
+        if username == 'client1' and password == '123': # base64 decode of Y2xpZW50MToxMjM= is client1:123
+            return True
         else:
-            connection.send(self.create_response(405, "Method Not Allowed"))
-            return
-        # get the username and password from the uri
-        username = uri.split('&')[0].split('=')[1]
-        password = uri.split('&')[1].split('=')[1]
-        # get the authentication information from the server
-        with open('auth.json', 'r') as f:
-            auth = json.load(f)
-        # check the authentication information
-        if username in auth.keys() and password == auth[username]:
-            connection.send(self.create_response(200, "OK"))
-            return
-        else:# if the authentication information is wrong, send 401 Unauthorized
             connection.send(self.create_response(401, "Unauthorized"))
-            return
-        return
+            #TODO: should i close the connection?
+            return False
+        
 
 
 def main():
