@@ -89,6 +89,7 @@ class Server:
 
         request_line, request_header, request_payload = request.split("\r\n", 2)
         print ('Handling GET request')
+
         # "GET / HTTP/1.1\r\n" 在这个情况下uri = GET 和 HTTP/1.1\r\n" 中间的 '/'
         uri = request_line.split(" ")[1]
         if uri == "/":
@@ -109,8 +110,12 @@ class Server:
             while True:
                 chunk = f.read(1024)
                 if not chunk:
+                    print('文件读取完毕')
                     break
                 connection.send(chunk)
+
+        if self.request_header_extractor(request_header,CON):
+            connection.close()
 
     def handle_post_request(self, uri, connection):
         pass
@@ -121,11 +126,11 @@ class Server:
     # ----------------------------------------------------------------
     # 提取一个headers中指定header的状态
     # request_header = "Connection : keep-alive\nAuthorization : Basic"
-    # request_header_checkConnection(request_header,'Connection' ,connection)
+    # request_header_extractor(request_header,'Connection' ,connection)
     # 返回值：keep-alive
     # please make sure that every header is strictly splited by “ ： ”, its also level-sensitive
     # ----------------------------------------------------------------
-    def request_header_extractor(request_header, target_header, connection):
+    def request_header_extractor(request_header, target_header):
         connection_status = [i for i in request_header.splitlines() if i.startswith(target_header)][0].split(' : ')[1]
         return connection_status
 
