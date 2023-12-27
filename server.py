@@ -11,7 +11,7 @@ import threading
 import pathlib
 import traceback
 import json
-
+import base64
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Simple file manager server")
@@ -105,9 +105,33 @@ class server:
     
     # add simple authentication function for this server following rfc7235
     def authenticate(self, connection):
-        connection.send(self.create_response(401, "Unauthorized"))
-        connection.close()
-        
+        # get the authentication information from the client
+        request = self.receive_request(connection)
+        request_line, request_header, request_payload = request.split("\r\n", 2)
+        print(request_line, request_header, request_payload)
+        request_line = request_line.upper()
+        if request_line.startswith("GET"):
+            uri = request_header
+        elif request_line.startswith("POST"):
+            uri = request_header
+        elif request_line.startswith("DELETE"):
+            uri = request_header
+        else:
+            connection.send(self.create_response(405, "Method Not Allowed"))
+            return
+        # get the username and password from the uri
+        username = uri.split('&')[0].split('=')[1]
+        password = uri.split('&')[1].split('=')[1]
+        # get the authentication information from the server
+        with open('auth.json', 'r') as f:
+            auth = json.load(f)
+        # check the authentication information
+        if username in auth.keys() and password == auth[username]:
+            connection.send(self.create_response(200, "OK"))
+            return
+        else:# if the authentication information is wrong, send 401 Unauthorized
+            connection.send(self.create_response(401, "Unauthorized"))
+            return
         return
 
 
