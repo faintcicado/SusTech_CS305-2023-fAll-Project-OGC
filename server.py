@@ -94,9 +94,8 @@ class Server:
 
     def handle_get_request(self, request, connection):
 
-        request_line, request_header, request_payload = request.split("\r\n", 2)
+        request_line, request_header, request_payload = self.split_request(self,request)
         print ('Handling GET request')
-
         # "GET / HTTP/1.1\r\n" 在这个情况下uri = GET 和 HTTP/1.1\r\n" 中间的 '/'
         uri = request_line.split(" ")[1]
         if uri == "/":
@@ -121,14 +120,26 @@ class Server:
                     break
                 connection.send(chunk)
 
-        if self.request_header_extractor(request_header,CON):
+        if self.request_header_extractor(request_header,CON) == 'close':
             connection.close()
 
-    def handle_post_request(self, uri, connection):
+    def handle_post_request(self, request, connection):
         pass
 
-    def handle_delete_request(self, uri, connection):
+
+
+    def handle_delete_request(self, request, connection):
         pass
+
+    '''
+    将request区分为三个部分
+    '''
+    def split_request(self, request):
+        # 先提取request_line
+        request_line, request_body = request.split("\r\n", 1)
+        request_header, request_payload = request_body.split("\r\n\r\n",1)
+        return request_line,request_header,request_payload
+
 
     # ----------------------------------------------------------------
     # 提取一个headers中指定header的状态
@@ -137,7 +148,9 @@ class Server:
     # 返回值：keep-alive
     # please make sure that every header is strictly splited by “ ： ”, its also level-sensitive
     # ----------------------------------------------------------------
-    def request_header_extractor(self, target_header, connection):
+    def request_header_extractor(self,request_header, target_header):
+        print(request_header)
+        print(target_header)
         connection_status = [i for i in request_header.splitlines() if i.startswith(target_header)][0].split(' : ')[1]
         return connection_status
 
