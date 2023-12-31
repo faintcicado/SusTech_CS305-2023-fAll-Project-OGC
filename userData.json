@@ -2,8 +2,7 @@
     "users": [
         {
             "username": "client1",
-            "password": "123",
-            "comment": "Y2xpZW50MToxMjM is client1:123"
+            "password": "123"
         },
         {
             "username": "user2",

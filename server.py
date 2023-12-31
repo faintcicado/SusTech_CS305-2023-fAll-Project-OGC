@@ -36,14 +36,14 @@ TE = 'Transfer-Encoding'
 CR = 'Content-Range'
 
 class Server:
-    Header = ''
+    request_headers = {}
+    response_line = None
+    response_headers = None
+    response_payload = None
+    connection = None
 
     def __init__(self, port):
-        request_headers = {}
-        response_line = None
-        response_headers = None
-        response_payload = None
-        connection = None
+
         self.port = port
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -98,14 +98,16 @@ class Server:
             self.request_headers[header] = value
 
 
-        request_line = request_line.upper()
+
+
         # authenticate the username and password
         # 未认证的情况直接关闭链接
-        # if(self.authenticate(request, connection)):
-        #     pass
-        # else:
-        #     return False
-            
+        if(self.authenticate(request, connection)):
+            pass
+        else:
+            return False
+
+        request_line = request_line.upper()
         if request_line.startswith("GET"):
             # 将整个请求传入进行处理
             self.handle_get_request(request, connection,False)
@@ -201,10 +203,10 @@ class Server:
     # ----------------------------------------------------------------
     # 提取一个headers中指定header的状态
     def get_request_header(self, target_header):
-        if target_header not in self.headers:
+        if target_header not in self.request_headers:
             return False
         else:
-            return self.headers[str(target_header)]
+            return self.request_headers[str(target_header)]
 
     # 将全局的response头修改
     def create_response_line(self,status_code,status_message):
@@ -240,13 +242,9 @@ class Server:
     def read_credentials_from_json(self, file_path):
         with open(file_path, 'r') as file:
             data = json.load(file)
-            credentials_list = []
+            credentials_list = {}
             for user_data in data['users']:
-                credentials = {
-                    'username': user_data['username'],
-                    'password': user_data['password']
-                }
-                credentials_list.append(credentials)
+                credentials_list[user_data['username']] = user_data['password']
             return credentials_list
 
 
@@ -259,8 +257,9 @@ class Server:
 
         file_path = 'userData.json'
         credentials = self.read_credentials_from_json(file_path)
-
+        print(username, password)
         if username in credentials and password == credentials[username]:
+
             print("Authentication success")
 
             return True
