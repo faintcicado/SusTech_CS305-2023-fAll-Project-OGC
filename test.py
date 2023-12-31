@@ -4,6 +4,7 @@ def testing(num):
     match num:
         case 1:
             headers={"Authorization": "Basic Y2xpZW50MToxMjM="}
+            headers={"Authorization": "Basic ZGY6MTIzNA=="}
             q=requests.head('http://localhost:8080/',headers=headers)
             print(q)
         case 2:

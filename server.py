@@ -97,9 +97,6 @@ class Server:
             header,value = i.split(": ")
             self.request_headers[header] = value
 
-
-
-
         # authenticate the username and password
         # 未认证的情况直接关闭链接
         if(self.authenticate(request, connection)):
@@ -231,12 +228,12 @@ class Server:
 
 
 
-    def create_response(self, status_code, status_message, content_type="text/plain",content_length = 0):
-        response = f"HTTP/1.1 {status_code} {status_message}\r\n"
-        response += f"Content-Type: {content_type}\r\n"
-        response += f"Content-Length: {len(response)}\r\n"
-        response += "\r\n"
-        return response.encode("utf-8")
+    # def create_response(self, status_code, status_message, content_type="text/plain",content_length = 0):
+    #     response = f"HTTP/1.1 {status_code} {status_message}\r\n"
+    #     response += f"Content-Type: {content_type}\r\n"
+    #     response += f"Content-Length: {len(response)}\r\n"
+    #     response += "\r\n"
+    #     return response.encode("utf-8")
 
 
     def read_credentials_from_json(self, file_path):
@@ -253,19 +250,27 @@ class Server:
         # Authenticate the client request
         request_line, request_header, request_payload = self.split_request(request)
         authorization = self.get_request_header(AUT)
-        username, password = base64.b64decode(authorization.split(' ')[1]).decode('utf-8').split(':')
+        if authorization:
+            username, password = base64.b64decode(authorization.split(' ')[1]).decode('utf-8').split(':')
 
-        file_path = 'userData.json'
-        credentials = self.read_credentials_from_json(file_path)
-        print(username, password)
-        if username in credentials and password == credentials[username]:
+            file_path = 'userData.json'
+            credentials = self.read_credentials_from_json(file_path)
+            print(username, password)
+            if username in credentials and password == credentials[username]:
 
-            print("Authentication success")
+                print("Authentication success")
+                return True
+            else:
+                self.create_response_line(401, "Unauthorized")
+                self.end_response_line()
 
-            return True
+                print("Authentication failed")
+                return False
         else:
-            connection.send(self.create_response(401, "Unauthorized"))
-            print("Authentication failed")
+            # connection.send(self.create_response(401, "Unauthorized"))
+            self.create_response_line(401, "Unauthorized")
+            self.create_response_header('WWW-Authenticated','Basic realm="Authorization Required"')
+            print("缺少Aut信息")
             return False
         
 
