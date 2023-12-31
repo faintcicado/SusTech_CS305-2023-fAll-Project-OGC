@@ -147,28 +147,39 @@ class Server:
         response += f"Content-Length: {len(response)}\r\n"
         response += "\r\n"
         return response.encode("utf-8")
-    
-    # add simple authentication function for this server following rfc7235
-    def authenticate(self, request, connection):
-        # using request_header_extractor to extract the Authorization header 
-        # and then using the base64 to decode the username and password then compare with the local file (not that complicated through)
-        # then return the status code to client then return true or false to the main function
 
-        #TODO: test this function
-        #TODO: how to use request_header_extractor
-        request_line, request_header, request_payload = request.split("\r\n", 2)
-        authorization = self.request_header_extractor(request_header, 'Authorization')
+
+    def read_credentials_from_json(self, file_path):
+        with open(file_path, 'r') as file:
+            data = json.load(file)
+            credentials_list = []
+            for user_data in data['users']:
+                credentials = {
+                    'username': user_data['username'],
+                    'password': user_data['password']
+                }
+                credentials_list.append(credentials)
+            return credentials_list
+
+
+    # add simple authentication function for this server following rfc7235
+
+    def authenticate(self, request, connection):
+        # Authenticate the client request
+        request_line, request_header, request_payload = self.split_request(request)
+        authorization = self.get_request_header(AUT)
         username, password = base64.b64decode(authorization.split(' ')[1]).decode('utf-8').split(':')
-        print('username: %s\n' % username)
-        print('password: %s\n' % password)
-        if username == 'client1' and password == '123': # base64 decode of Y2xpZW50MToxMjM= is client1:123
+
+        file_path = 'userData.json'
+        credentials = self.read_credentials_from_json(file_path)
+
+        if username in credentials and password == credentials[username]:
+            print("Authentication success")
             return True
         else:
             connection.send(self.create_response(401, "Unauthorized"))
-            #TODO: should i close the connection?
+            print("Authentication failed")
             return False
-        
-
 
 def main():
     args = parse_args()
