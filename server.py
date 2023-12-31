@@ -36,7 +36,14 @@ TE = 'Transfer-Encoding'
 CR = 'Content-Range'
 
 class Server:
+    request_headers = {}
+    response_line = None
+    response_headers = None
+    response_payload = None
+    connection = None
+
     def __init__(self, port):
+
         self.port = port
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -47,17 +54,23 @@ class Server:
         self.server_socket.listen(10)
 
     def run(self):
+        # 等待client链接
         while True:
             # 返回一个用来传输数据的socket -> connection
             connection, address = self.server_socket.accept()
+
             self.handle_connection(connection, address)
 
     def handle_connection(self, connection, address):
         try:
-            request = self.receive_request(connection)
-            self.handle_request(request, connection)
+            self.connection = connection
+            # self.receive_request(connection)
+            while self.handle_request(self.receive_request(connection), connection):
+                pass
         except Exception:
             traceback.print_exc(file=sys.stderr)
+        finally:
+            connection.close()
 
     def receive_request(self, connection):
         request = b""
@@ -68,36 +81,92 @@ class Server:
             request += chunk
             # 当接收到\r\n\r\n时，报文结束
             if chunk.endswith(b"\r\n\r\n"):
+            # if chunk is None:
                 break
-        return request.decode("utf-8")
+        return request.decode()
 
     def handle_request(self, request, connection):
-        # request_line =  "GET / HTTP/1.1\r\n"
-        request_line= request.split("\r\n", 2)[0]
-        request_line = request_line.upper()
-        # authenticate the username and password
 
+        # request_line =  "GET / HTTP/1.1\r\n"
+        request_line,temp =  request.split("\r\n", 1)
+        # request_headers_temp1 :
+        request_headers_temp1,request_payload = temp.split("\r\n\r\n")
+
+        request_headers_temp2 = request_headers_temp1.split("\r\n")
+        for i in request_headers_temp2:
+            header,value = i.split(": ")
+            self.request_headers[header] = value
+
+        # authenticate the username and password
+        # 未认证的情况直接关闭链接
         if(self.authenticate(request, connection)):
             pass
         else:
-            return
-            
+            return False
+
+        request_line = request_line.upper()
         if request_line.startswith("GET"):
             # 将整个请求传入进行处理
-            self.handle_get_request(request, connection)
+            self.handle_get_request(request, connection,False)
         elif request_line.startswith("POST"):
             self.handle_post_request(request, connection)
-        elif request_line.startswith("DELETE"):
-            self.handle_delete_request(request, connection)
+        elif request_line.startswith("HEAD"):
+            self.handle_get_request(request, connection,False)
         else:
             connection.send(self.create_response(405, "Method Not Allowed"))
 
-    def handle_get_request(self, request, connection):
+    def handle_get_request(self, request, connection,isHead):
 
-        request_line, request_header, request_payload = request.split("\r\n", 2)
+        request_line, request_header, request_payload = self.split_request(request)
         print ('Handling GET request')
-
         # "GET / HTTP/1.1\r\n" 在这个情况下uri = GET 和 HTTP/1.1\r\n" 中间的 '/'
+
+        uri = request_line.split(" ")[1]
+        if uri == "/":
+            uri = "index.html"
+            # uri = "picture.jpg"
+        file_path = pathlib.Path(__file__).parent / uri
+        print('file_path: %s' % file_path)
+
+        # 检查里路径里是否存在该文件
+        if not file_path.is_file():
+            connection.sendall(self.create_response(404, "File Not Found"))
+            return
+
+        # 检测目标文件类型
+        content_type = mimetypes.guess_type(file_path)[0]
+        if content_type is None:
+            # 通用的二进制文件类型
+            content_type = "application/octet-stream"
+        with open(file_path, "rb") as f:
+            connection.sendall(self.create_response(200, "OK", content_type,len(f.read())))
+            print(self.create_response(200, "OK", content_type))
+
+            if(not isHead):
+                while True:
+                    chunk = f.read()
+                    if not chunk:
+                        print('文件读取完毕')
+                        break
+                    # 在此处传输文件payload
+                    connection.sendall(chunk)
+                    print(chunk)
+                print("文件发送完毕")
+                print("================================================")
+
+        # if self.request_header_extractor(request_header,CON) == 'close':
+        #     connection.close()
+
+    def handle_post_request(self, request, connection):
+        connection.send(self.create_response(200, "OK"))
+
+
+
+    def handle_head_request(self, request, connection):
+        request_line, request_header, request_payload = self.split_request(request)
+        request_payload = request_payload.strip()
+        print('Handling POST request')
+
         uri = request_line.split(" ")[1]
         if uri == "/":
             uri = "index.html"
@@ -108,78 +177,103 @@ class Server:
         if not file_path.is_file():
             connection.send(self.create_response(404, "File Not Found"))
             return
+        # 检测目标文件类型
         content_type = mimetypes.guess_type(file_path)[0]
         if content_type is None:
             # 通用的二进制文件类型
             content_type = "application/octet-stream"
         with open(file_path, "rb") as f:
             connection.send(self.create_response(200, "OK", content_type))
-            while True:
-                chunk = f.read(1024)
-                if not chunk:
-                    print('文件读取完毕')
-                    break
-                connection.send(chunk)
 
-        if self.request_header_extractor(request_header,CON):
+        if self.request_header_extractor(request_header, CON) == 'close':
             connection.close()
 
-    def handle_post_request(self, uri, connection):
-        pass
 
-    def handle_delete_request(self, uri, connection):
-        pass
+    # 将request区分为三个部分
+    def split_request(self, request):
+        # 先提取request_line
+        request_line, request_body = request.split("\r\n", 1)
+        request_header, request_payload = request_body.split("\r\n\r\n",1)
+        return request_line,request_header,request_payload
+
 
     # ----------------------------------------------------------------
     # 提取一个headers中指定header的状态
-    # request_header = "Connection : keep-alive\nAuthorization : Basic"
-    # request_header_extractor(request_header,'Connection' ,connection)
-    # 返回值：keep-alive
-    # please make sure that every header is strictly splited by “ ： ”, its also level-sensitive
-    # ----------------------------------------------------------------
-    def request_header_extractor(self, target_header, connection):
-        connection_status = [i for i in request_header.splitlines() if i.startswith(target_header)][0].split(' : ')[1]
-        return connection_status
+    def get_request_header(self, target_header):
+        if target_header not in self.request_headers:
+            return False
+        else:
+            return self.request_headers[str(target_header)]
 
-    def create_response(self, status_code, status_message, content_type="text/plain"):
-        response = f"HTTP/1.1 {status_code} {status_message}\r\n"
-        response += f"Content-Type: {content_type}\r\n"
-        response += f"Content-Length: {len(response)}\r\n"
-        response += "\r\n"
-        return response.encode("utf-8")
+    # 将全局的response头修改
+    def create_response_line(self,status_code,status_message):
+        self.response_line = f"HTTP/1.1 {status_code} {status_message}\r\n"
+
+    # 增加一个回复header
+    def create_response_header(self,header,value):
+        self.response_header += (f"{header}: {value}\r\n")
+
+    # 结束headers的编辑
+    def end_response_headers(self):
+        self.response_header += (f"\r\n")
+        self.flush_headers(self)
+
+    # encode and send headers
+    def flush_headers(self):
+        self.connection.sendall(self.response_header.encode())
+
+    # encode and send response_line
+    def end_response_line(self):
+        self.connection.sendall(self.response_line.encode())
+
+
+
+    # def create_response(self, status_code, status_message, content_type="text/plain",content_length = 0):
+    #     response = f"HTTP/1.1 {status_code} {status_message}\r\n"
+    #     response += f"Content-Type: {content_type}\r\n"
+    #     response += f"Content-Length: {len(response)}\r\n"
+    #     response += "\r\n"
+    #     return response.encode("utf-8")
 
 
     def read_credentials_from_json(self, file_path):
         with open(file_path, 'r') as file:
             data = json.load(file)
-            credentials_list = []
+            credentials_list = {}
             for user_data in data['users']:
-                credentials = {
-                    'username': user_data['username'],
-                    'password': user_data['password']
-                }
-                credentials_list.append(credentials)
+                credentials_list[user_data['username']] = user_data['password']
             return credentials_list
 
 
     # add simple authentication function for this server following rfc7235
-
     def authenticate(self, request, connection):
         # Authenticate the client request
         request_line, request_header, request_payload = self.split_request(request)
         authorization = self.get_request_header(AUT)
-        username, password = base64.b64decode(authorization.split(' ')[1]).decode('utf-8').split(':')
+        if authorization:
+            username, password = base64.b64decode(authorization.split(' ')[1]).decode('utf-8').split(':')
 
-        file_path = 'userData.json'
-        credentials = self.read_credentials_from_json(file_path)
+            file_path = 'userData.json'
+            credentials = self.read_credentials_from_json(file_path)
+            print(username, password)
+            if username in credentials and password == credentials[username]:
 
-        if username in credentials and password == credentials[username]:
-            print("Authentication success")
-            return True
+                print("Authentication success")
+                return True
+            else:
+                self.create_response_line(401, "Unauthorized")
+                self.end_response_line()
+
+                print("Authentication failed")
+                return False
         else:
-            connection.send(self.create_response(401, "Unauthorized"))
-            print("Authentication failed")
+            # connection.send(self.create_response(401, "Unauthorized"))
+            self.create_response_line(401, "Unauthorized")
+            self.create_response_header('WWW-Authenticated','Basic realm="Authorization Required"')
+            print("缺少Aut信息")
             return False
+        
+
 
 def main():
     args = parse_args()
