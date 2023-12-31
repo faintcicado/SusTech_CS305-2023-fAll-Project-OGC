@@ -87,17 +87,17 @@ class Server:
             self.handle_get_request(request, connection)
         elif request_line.startswith("POST"):
             self.handle_post_request(request, connection)
-        elif request_line.startswith("DELETE"):
-            self.handle_delete_request(request, connection)
+        elif request_line.startswith("HEAD"):
+            self.handle_head_request(request, connection)
         else:
             connection.send(self.create_response(405, "Method Not Allowed"))
 
     def handle_get_request(self, request, connection):
 
-        request_line, request_header, request_payload = request.split("\r\n", 2)
+        request_line, request_header, request_payload = self.split_request(request)
         print ('Handling GET request')
-
         # "GET / HTTP/1.1\r\n" 在这个情况下uri = GET 和 HTTP/1.1\r\n" 中间的 '/'
+
         uri = request_line.split(" ")[1]
         if uri == "/":
             uri = "index.html"
@@ -108,6 +108,8 @@ class Server:
         if not file_path.is_file():
             connection.send(self.create_response(404, "File Not Found"))
             return
+
+        # 检测目标文件类型
         content_type = mimetypes.guess_type(file_path)[0]
         if content_type is None:
             # 通用的二进制文件类型
@@ -119,16 +121,53 @@ class Server:
                 if not chunk:
                     print('文件读取完毕')
                     break
+                # 在此处传输文件payload
                 connection.send(chunk)
+            print("文件发送完毕")
+            print("================================================")
 
-        if self.request_header_extractor(request_header,CON):
+        if self.request_header_extractor(request_header,CON) == 'close':
             connection.close()
 
-    def handle_post_request(self, uri, connection):
-        pass
+    def handle_post_request(self, request, connection):
+        connection.send(self.create_response(200, "OK"))
 
-    def handle_delete_request(self, uri, connection):
-        pass
+
+
+    def handle_head_request(self, request, connection):
+        request_line, request_header, request_payload = self.split_request(request)
+        print('Handling HEAD request')
+        # "GET / HTTP/1.1\r\n" 在这个情况下uri = GET 和 HTTP/1.1\r\n" 中间的 '/'
+
+        uri = request_line.split(" ")[1]
+        if uri == "/":
+            uri = "index.html"
+        file_path = pathlib.Path(__file__).parent / uri
+        # print('file_path: %s' % file_path)
+
+        # 检查里路径里是否存在该文件
+        if not file_path.is_file():
+            connection.send(self.create_response(404, "File Not Found"))
+            return
+        # 检测目标文件类型
+        content_type = mimetypes.guess_type(file_path)[0]
+        if content_type is None:
+            # 通用的二进制文件类型
+            content_type = "application/octet-stream"
+        with open(file_path, "rb") as f:
+            connection.send(self.create_response(200, "OK", content_type))
+
+        if self.request_header_extractor(request_header, CON) == 'close':
+            connection.close()
+
+
+    # 将request区分为三个部分
+    def split_request(self, request):
+        # 先提取request_line
+        request_line, request_body = request.split("\r\n", 1)
+        request_header, request_payload = request_body.split("\r\n\r\n",1)
+        return request_line,request_header,request_payload
+
 
     # ----------------------------------------------------------------
     # 提取一个headers中指定header的状态
@@ -137,8 +176,10 @@ class Server:
     # 返回值：keep-alive
     # please make sure that every header is strictly splited by “ ： ”, its also level-sensitive
     # ----------------------------------------------------------------
-    def request_header_extractor(self, target_header, connection):
-        connection_status = [i for i in request_header.splitlines() if i.startswith(target_header)][0].split(' : ')[1]
+    def request_header_extractor(self,request_header, target_header):
+        # print(request_header)
+        # print(target_header)
+        connection_status = [i for i in request_header.splitlines() if i.startswith(target_header)][0].split(': ')[1]
         return connection_status
 
     def create_response(self, status_code, status_message, content_type="text/plain"):
@@ -163,7 +204,6 @@ class Server:
 
 
     # add simple authentication function for this server following rfc7235
-
     def authenticate(self, request, connection):
         # Authenticate the client request
         request_line, request_header, request_payload = self.split_request(request)
@@ -175,6 +215,7 @@ class Server:
 
         if username in credentials and password == credentials[username]:
             print("Authentication success")
+
             return True
         else:
             connection.send(self.create_response(401, "Unauthorized"))
