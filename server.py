@@ -240,7 +240,6 @@ class Server:
             self.create_response_line(404, "Not found")
             self.create_response_header("Content-Type", "application/octet-stream")
             self.create_response_header("Content-Length", "0")
-            self.create_response_payload(f.read())
             self.end_response_line()
             self.end_response_headers()
             self.end_response_payload()
@@ -277,6 +276,8 @@ class Server:
     def render_dir_html(self, dir_path):
         # to be done
         html = "<html><head><title>Directory Listing</title></head><body>"
+        if dir_path != "/":
+            html += "<a href='../'>../</a><br>"
         for file in os.listdir(dir_path):
             if os.path.isdir(os.path.join(dir_path, file)):
                 file += "/"
