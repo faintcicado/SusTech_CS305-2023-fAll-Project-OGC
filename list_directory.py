@@ -186,13 +186,9 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         except os.error:
             self.send_error(404, "No permission to list directory")
             return None
-        
-        list_dir.sort(key=lambda a: a.lower())  # Sort the directory listing in a case-insensitive manner
-        
-        f = BytesIO()  # Create a BytesIO object to store the HTML content
-        display_path = escape(unquote(self.path))  # Escape and decode the path for display
-        
-        # Write the HTML content for the directory listing
+        list_dir.sort(key=lambda a: a.lower())
+        f = BytesIO()
+        display_path = escape(unquote(self.path))
         f.write(b'<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">')
         f.write(b"<html>\n<title>Directory listing for %s</title>\n" % display_path.encode('utf-8'))
         f.write(b"<body>\n<h2>Directory listing for %s</h2>\n" % display_path.encode('utf-8'))
@@ -201,12 +197,9 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         f.write(b"<input name=\"file\" type=\"file\"/>")
         f.write(b"<input type=\"submit\" value=\"upload\"/></form>\n")
         f.write(b"<hr>\n<ul>\n")
-        
-        # Iterate over each item in the sorted directory listing and generate HTML list items
         for name in list_dir:
             fullname = os.path.join(path, name)
             display_name = linkname = name
-            
             # Append / for directories or @ for symbolic links
             if os.path.isdir(fullname):
                 display_name = name + "/"
@@ -214,21 +207,15 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
             if os.path.islink(fullname):
                 display_name = name + "@"
                 # Note: a link to a directory displays with @ and links with /
-            
             f.write(b'<li><a href="%s">%s</a>\n' % (quote(linkname).encode('utf-8'), escape(display_name).encode('utf-8')))
-        
         f.write(b"</ul>\n<hr>\n</body>\n</html>\n")
-        
-        length = f.tell()  # Get the length of the HTML content
+        length = f.tell()
         f.seek(0)
-        
-        self.send_response(200)  # Send a successful response
+        self.send_response(200)
         self.send_header("Content-type", "text/html;charset=utf-8")
         self.send_header("Content-Length", str(length))
         self.end_headers()
-        
-        return f  # Return the BytesIO object containing the HTML content
-
+        return f
 
     def guess_type(self, path):
         """Guess the type of a file.
