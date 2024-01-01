@@ -11,6 +11,7 @@ import threading
 import pathlib
 import traceback
 import json
+import secrets
 import base64
 import shutil
 
@@ -42,14 +43,21 @@ class Server:
     response_headers = f''
     response_payload = b''
     connection = None
+    users = set()
+    cookie_length = 16
+    # cookies -> clients
+    cookie_to_username = {}
+    cookie_to_lifetime = {}
+    cookie_lifetime = datetime.timedelta(minutes=5)
 
-    def __init__(self, port):
+    def __init__(self,host, port):
+        print(f"Server working on {host} {port}")
 
         self.port = port
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         # 将server绑定到指定host和port上
-        self.server_socket.bind(("localhost", self.port))
+        self.server_socket.bind((host, port))
         # 最多等待10个客户端的链接
         # 启动server
         self.server_socket.listen(10)
@@ -76,18 +84,18 @@ class Server:
     def receive_request(self, connection):
         request = b""
 
-        while True:
+        # while True:
             # 阻塞程序，持续接收数据
-            chunk = connection.recv(1024)
-            request += chunk
+        chunk = connection.recv(4096)
+        request += chunk
             # 当接收到\r\n\r\n时，报文结束
-            if chunk.endswith(b"\r\n\r\n"):
+            # if chunk.endswith(b"\r\n\r\n"):
             # if chunk is None:
-                break
+            #     break
         return request.decode()
 
     def handle_request(self, request, connection):
-
+        self.request_line_sended = False
         # request_line =  "GET / HTTP/1.1\r\n"
         request_line,temp =  request.split("\r\n", 1)
         # request_headers_temp1 :
@@ -98,12 +106,27 @@ class Server:
             header,value = i.split(": ")
             self.request_headers[header] = value
 
-        # authenticate the username and password
-        # 未认证的情况直接关闭链接
-        if(self.authenticate(request, connection)):
+        # authenticate and cookie
+        # 检查请求头中是否存在cookie:
+        if self.get_request_header('Cookie'):
+            session_id = self.get_request_header('Cookie')[11:]
+            if session_id in self.cookie_to_username:
+                if session_id in self.cookie_to_lifetime and datetime.datetime.utcnow() > self.cookie_to_lifetime[session_id]:
+                    pass
+                else:
+        #           cookie过期 返回401 或者 不存在该cookie(cookie_to_lifetime)
+                    self.create_response_line(401,'Unauthorized')
+                    self.cookie_to_lifetime.pop(session_id)
+                    self.cookie_to_username.pop(session_id)
+            # invalid cookie
+            else:
+                self.create_response_line(401,'Unauthorized')
+
+        # 请求头中不存在 Cookie header
+        elif(self.authenticate(request, connection)):
+            # 认证成功后set-cookie
             pass
-        else:
-            return False
+
 
         request_line = request_line.upper()
         if request_line.startswith("GET"):
@@ -116,13 +139,29 @@ class Server:
         else:
             connection.send(self.create_response(405, "Method Not Allowed"))
 
-    def handle_get_request(self, request, connection,isHead):
+
+
+        # 检测是否要关闭链接
+        if self.get_request_header(self,CON).lower() == 'keep-alive':
+            return True
+        else:
+            return False
+
+    def generate_random_cookie(self):
+        while True:
+            temp_cookie = secrets.token_hex(self.cookie_length)
+            if temp_cookie not in self.cookie_to_username:
+                return temp_cookie
+
+
+
+    def handle_get_post_request(self, request, connection, isHead):
 
         request_line, request_header, request_payload = self.split_request(request)
         print ('Handling GET request')
         # "GET / HTTP/1.1\r\n" 在这个情况下uri = GET 和 HTTP/1.1\r\n" 中间的 '/'
-        uri = request_line.split(" ")[1]
 
+        uri = request_line.split(" ")[1]
         if uri == "/":
             uri = "index.html"
         elif uri == "/teapot":
@@ -146,20 +185,18 @@ class Server:
                         connection.send(self.create_response(200, "OK", content_type, os.path.getsize(file_path)))
                         connection.send(f.read())
                 elif file_path.is_dir():
-                    render_dir_html();
+                    pass
+                    # render_dir_html();
                 else:
                     # send 404 not found
                     return
             else:
                 # send 404 not found
                 return
-         
+
     def send_file(self, file_path, connection):
         # to be done
-        with open(file_path, "rb") as f:
-            connection.send(self.create_response(200, "OK", content_type, os.path.getsize(file_path)))
-            connection.send(f.read())
-
+        return
     def render_dir_html(self, dir_path):
         # to be done
         html = "<html><body>"
@@ -167,7 +204,7 @@ class Server:
             html += f"<a href='{file}'>{file}</a><br>"
         html += "</body></html>"
         return html
-            
+
 
     def handle_post_request(self, request, connection):
         connection.send(self.create_response(200, "OK"))
@@ -223,24 +260,28 @@ class Server:
 
     # 增加一个回复header
     def create_response_header(self,header,value):
-        self.response_header += (f"{header}: {value}\r\n")
+        self.response_headers = self.response_headers + (f"{header}: {value}\r\n")
 
     # 结束headers的编辑
     def end_response_headers(self):
-        self.response_header += (f"\r\n")
-        self.flush_headers(self)
+        if self.request_line_sended:
+            self.response_headers = self.response_headers + (f"\r\n")
+            self.flush_headers(self)
+        else:
+            print("Error: Response headers should be sent after response line has been sent")
 
     # encode and send headers
     def flush_headers(self):
-        self.connection.sendall(self.response_header.encode())
+        self.connection.sendall(self.response_headers.encode())
 
     # encode and send response_line
     def end_response_line(self):
         self.connection.sendall(self.response_line.encode())
+        self.request_line_sended = True
 
     def create_response_payload(self,payload):
-        self.response_payload.append(payload.encode())
-    
+        self.response_payload = self.response_payload + (payload.encode())
+
     def end_response_payload(self):
         self.connection.sendall(self.response_payload)
 
@@ -255,6 +296,15 @@ class Server:
                 credentials_list[user_data['username']] = user_data['password']
             return credentials_list
 
+    def set_cookie(self,username):
+        temp_cookie = self.generate_random_cookie()
+        self.cookie_to_username[temp_cookie] = username
+        temp_cookie_lifetime = datetime.datetime.utcnow() + self.cookie_lifetime
+        self.cookie_to_lifetime[temp_cookie] = temp_cookie_lifetime
+        # 编辑Set-Cookie header
+        self.create_response_header('Set-Cookie',f'session-id={temp_cookie};Expires={temp_cookie_lifetime}')
+
+
 
     # add simple authentication function for this server following rfc7235
     def authenticate(self, request, connection):
@@ -268,27 +318,28 @@ class Server:
             credentials = self.read_credentials_from_json(file_path)
             print(username, password)
             if username in credentials and password == credentials[username]:
+                self.set_cookie(username)
 
-                print("Authentication success")
+                print(f"User:{username} Authentication success")
                 return True
             else:
+                # 登录信息不存在userData.json中,或者密码错误
                 self.create_response_line(401, "Unauthorized")
                 self.end_response_line()
-
                 print("Authentication failed")
                 return False
         else:
-            # connection.send(self.create_response(401, "Unauthorized"))
+            # request中没有authorization信息
             self.create_response_line(401, "Unauthorized")
             self.create_response_header('WWW-Authenticated','Basic realm="Authorization Required"')
+            self.end_response_line()
+            self.end_response_headers()
             print("缺少Aut信息")
             return False
-        
-
 
 def main():
     args = parse_args()
-    server = Server(args.port)
+    server = Server(args.host,args.port)
     server.run()
 
 
