@@ -12,6 +12,7 @@ import pathlib
 import traceback
 import json
 import base64
+import shutil
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Simple file manager server")
@@ -37,9 +38,9 @@ CR = 'Content-Range'
 
 class Server:
     request_headers = {}
-    response_line = None
-    response_headers = None
-    response_payload = None
+    response_line = f''
+    response_headers = f''
+    response_payload = b''
     connection = None
 
     def __init__(self, port):
@@ -120,42 +121,53 @@ class Server:
         request_line, request_header, request_payload = self.split_request(request)
         print ('Handling GET request')
         # "GET / HTTP/1.1\r\n" 在这个情况下uri = GET 和 HTTP/1.1\r\n" 中间的 '/'
-
         uri = request_line.split(" ")[1]
+
         if uri == "/":
             uri = "index.html"
-            # uri = "picture.jpg"
-        file_path = pathlib.Path(__file__).parent / uri
-        print('file_path: %s' % file_path)
+        elif uri == "/teapot":
+            uri = "teapot.html"
+        # write a elif when uri begin with "/data/" or "data/" or "/data" or "data"
+        elif uri.startswith("/data/") or uri.startswith("data/") or uri.startswith("/data") or uri.startswith("data"):
+            if uri.startswith('/'): # remove the leading '/'
+                uri = uri[1:]
+            file_path = pathlib.Path(__file__).parent / uri
+            print('file_path: %s' % file_path)
 
-        # 检查里路径里是否存在该文件
-        if not file_path.is_file():
-            connection.sendall(self.create_response(404, "File Not Found"))
-            return
-
-        # 检测目标文件类型
-        content_type = mimetypes.guess_type(file_path)[0]
-        if content_type is None:
-            # 通用的二进制文件类型
-            content_type = "application/octet-stream"
+            # 检查里路径里是否存在该文件
+            if file_path.exists():
+                if file_path.is_file():
+                    # 检测目标文件类型
+                    content_type = mimetypes.guess_type(file_path)[0]
+                    if content_type is None:
+                        # 通用的二进制文件类型
+                        content_type = "application/octet-stream"
+                    with open(file_path, "rb") as f:
+                        connection.send(self.create_response(200, "OK", content_type, os.path.getsize(file_path)))
+                        connection.send(f.read())
+                elif file_path.is_dir():
+                    render_dir_html();
+                else:
+                    # send 404 not found
+                    return
+            else:
+                # send 404 not found
+                return
+         
+    def send_file(self, file_path, connection):
+        # to be done
         with open(file_path, "rb") as f:
-            connection.sendall(self.create_response(200, "OK", content_type,len(f.read())))
-            print(self.create_response(200, "OK", content_type))
+            connection.send(self.create_response(200, "OK", content_type, os.path.getsize(file_path)))
+            connection.send(f.read())
 
-            if(not isHead):
-                while True:
-                    chunk = f.read()
-                    if not chunk:
-                        print('文件读取完毕')
-                        break
-                    # 在此处传输文件payload
-                    connection.sendall(chunk)
-                    print(chunk)
-                print("文件发送完毕")
-                print("================================================")
-
-        # if self.request_header_extractor(request_header,CON) == 'close':
-        #     connection.close()
+    def render_dir_html(self, dir_path):
+        # to be done
+        html = "<html><body>"
+        for file in os.listdir(dir_path):
+            html += f"<a href='{file}'>{file}</a><br>"
+        html += "</body></html>"
+        return html
+            
 
     def handle_post_request(self, request, connection):
         connection.send(self.create_response(200, "OK"))
@@ -226,14 +238,13 @@ class Server:
     def end_response_line(self):
         self.connection.sendall(self.response_line.encode())
 
+    def create_response_payload(self,payload):
+        self.response_payload.append(payload.encode())
+    
+    def end_response_payload(self):
+        self.connection.sendall(self.response_payload)
 
 
-    # def create_response(self, status_code, status_message, content_type="text/plain",content_length = 0):
-    #     response = f"HTTP/1.1 {status_code} {status_message}\r\n"
-    #     response += f"Content-Type: {content_type}\r\n"
-    #     response += f"Content-Length: {len(response)}\r\n"
-    #     response += "\r\n"
-    #     return response.encode("utf-8")
 
 
     def read_credentials_from_json(self, file_path):
