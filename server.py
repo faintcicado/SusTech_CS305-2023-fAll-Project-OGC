@@ -50,7 +50,7 @@ class Server:
     cookie_to_lifetime = {}
     cookie_lifetime = datetime.timedelta(seconds=5)
     curuser = {}
-
+    
     def __init__(self,host, port):
         print(f"Server working on {host} {port}")
 
@@ -314,8 +314,8 @@ class Server:
                 temp = value.split('/',1)[1]
             else:
                 temp = value
-            target_dir = './data/' + temp
-            path = Path(target_dir)
+            target_file = './data/' + temp
+            path = Path(target_file)
 
             # 检测是否访问的时自己的dir
             if not temp.startswith(self.curuser['username']):
@@ -368,7 +368,7 @@ class Server:
 
             filename = head.split("filename=")[1].strip('"')
 
-            with open(target_dir + filename, 'w') as f:
+            with open(target_file + filename, 'w') as f:
                 f.write(data)
 
             self.create_response_line(200,"OK")
@@ -378,7 +378,47 @@ class Server:
 
 
         elif uri.startswith('/delete'):
-            pass
+            # 检测头部中是否包含 ? path
+            if ('?' not in uri or 'path' not in uri):
+                self.create_response_line(400, 'Bad Request')
+                self.create_response_header('Content-Length', '0')
+                self.end_response_line()
+                self.end_response_headers()
+                return False
+
+            # upload?path=/11912113/a.py
+            # value： /11912113/a.py
+            # temp: 11912113/a.py
+            value = uri.split('=')[1]
+            temp = ''
+            if value.startswith('/'):
+                temp = value.split('/', 1)[1]
+            else:
+                temp = value
+            target_file = './data/' + temp
+            path = Path(target_file)
+
+            # 检测是否访问的时自己的dir
+            if not temp.startswith(self.curuser['username']):
+                self.create_response_line(403, 'Forbidden')
+                self.create_response_header('Content-Length', '0')
+                self.end_response_line()
+                self.end_response_headers()
+                return False
+
+            # 检测访问的dir是否存在
+            if not path.exists():
+                self.create_response_line(404, 'Not Found')
+                self.create_response_header('Content-Length', '0')
+                self.end_response_line()
+                self.end_response_headers()
+                return False
+
+            os.remove(path)
+            self.create_response_line(200, "OK")
+            self.create_response_header('Content-Length', '0')
+            self.end_response_line()
+            self.end_response_headers()
 
 
 
