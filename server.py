@@ -264,6 +264,16 @@ class Server:
         self.create_response_line(status_code, status_message)
         self.end_response_line()
 
+    def get_dir_list(self, dir_path): # example return: ["123.png", "666/", "abc.py", "favicon.ico"]
+        dir_list = []
+        for file in os.listdir(dir_path):
+            if os.path.isdir(os.path.join(dir_path, file)):
+                file += "/"
+            dir_list.append(file)
+        return dir_list
+        
+
+
     def render_dir_html(self, dir_path):
         # to be done
         html = "<html><head><title>Directory Listing</title></head><body>"
