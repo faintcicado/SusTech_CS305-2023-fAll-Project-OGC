@@ -14,6 +14,7 @@ import json
 import secrets
 import base64
 import shutil
+from pathlib import Path
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Simple file manager server")
@@ -43,7 +44,6 @@ class Server:
     response_headers = f''
     response_payload = b''
     connection = None
-    users = set()
     cookie_length = 16
     # cookies -> clients
     cookie_to_username = {}
@@ -74,32 +74,31 @@ class Server:
         try:
             self.connection = connection
             # self.receive_request(connection)
-            while self.handle_request(self.receive_request(connection), connection):
+            while self.handle_request(connection):
                 pass
         except Exception:
             traceback.print_exc(file=sys.stderr)
         finally:
             connection.close()
 
-    def receive_request(self, connection):
+
+
+    def handle_request(self, connection):
         request = b""
 
         # while True:
             # 阻塞程序，持续接收数据
         chunk = connection.recv(4096)
         request += chunk
-            # 当接收到\r\n\r\n时，报文结束
-            # if chunk.endswith(b"\r\n\r\n"):
-            # if chunk is None:
-            #     break
-        return request.decode()
+        if request == b'':return False
 
-    def handle_request(self, request, connection):
+        request = request.decode()
+
         self.request_line_sended = False
         # request_line =  "GET / HTTP/1.1\r\n"
         request_line,temp =  request.split("\r\n", 1)
         # request_headers_temp1 :
-        request_headers_temp1,request_payload = temp.split("\r\n\r\n")
+        request_headers_temp1,request_payload = temp.split("\r\n\r\n",1)
 
         request_headers_temp2 = request_headers_temp1.split("\r\n")
         for i in request_headers_temp2:
@@ -108,9 +107,7 @@ class Server:
 
         # authenticate and cookie
         # 检查请求头中是否存在cookie:
-        
-        self.send_response_line(200, 'OK')
-        self.send_response_header(CT, 'text/html')
+
 
         if not ('mozilla' in self.get_request_header('User-Agent').lower()):
             if self.get_request_header('Cookie'):
@@ -161,27 +158,22 @@ class Server:
 
 
     def handle_get_post_request(self, request, connection, isHead):
+        request_line, request_header, request_payload = self.split_request(request)
         print ('Handling GET request')
         # "GET / HTTP/1.1\r\n" 在这个情况下uri = GET 和 HTTP/1.1\r\n" 中间的 '/'
 
-        request_line, request_header, request_payload = self.split_request(request)
-        # print (f'{request_line}')
-        # print (f'{request_header}')
-        # print (f'{request_payload}')
-        
         uri = request_line.split(" ")[1]
         if uri == "/":
-            uri = "index.html"    
+            uri = "index.html"
             file_path = pathlib.Path(__file__).parent / uri
             print('file_path: %s' % file_path)
-            self.send_file(file_path, connection)    
-            
+            self.send_file(file_path, connection)
         elif uri == "/teapot":
             uri = "teapot.html"
             file_path = pathlib.Path(__file__).parent / uri
             print('file_path: %s' % file_path)
-            self.send_file(file_path, connection)  
-        # write a elif when uri begin with "/data/" or "data/" or "/data" or "data"
+            self.send_file(file_path, connection)
+            # write a elif when uri begin with "/data/" or "data/" or "/data" or "data"
         elif uri.startswith("/data/") or uri.startswith("data/") or uri.startswith("/data") or uri.startswith("data"):
             if uri.startswith('/'): # remove the leading '/'
                 uri = uri[1:]
@@ -210,7 +202,6 @@ class Server:
                 # send 404 not found
                 return
 
-
     def send_file(self, file_path, connection):
         with open(file_path, "rb") as f:
             self.create_response_line(200, "OK")
@@ -224,7 +215,7 @@ class Server:
     def send_response_header(self, header, value):
         self.create_response_header(header, value)
         self.end_response_headers()
-        
+
     def send_response_line(self, status_code, status_message):
         self.create_response_line(status_code, status_message)
         self.end_response_line()
@@ -239,13 +230,129 @@ class Server:
 
 
     def handle_post_request(self, request, connection):
-        connection.send(self.create_response(200, "OK"))
+        request_line, request_header, request_payload = self.split_request(request)
+        print('Handling POST request')
+        uri = request_line.split(" ")[1]
+        if not(uri.startswith('/upload') or uri.startswith('/delete')):
+            self.create_response_line(405,'Method Not Allowed')
+            self.create_response_header('Content-Length', '0')
+            self.end_response_line()
+            self.end_response_headers()
+            return False
+
+        if uri.startswith('/upload'):
+            # 检测头部中是否包含 ? path
+            if ('?' not in uri or 'path' not in uri):
+                self.create_response_line(400,'Bad Request')
+                self.create_response_header('Content-Length', '0')
+                self.end_response_line()
+                self.end_response_headers()
+                return False
+
+            # upload?path= /11912113/
+            # value： /11912113/
+            # temp: 11912113/
+            value = uri.split('=')[1]
+            temp = ''
+            if value.startswith('/'):
+                temp = value.split('/',1)[1]
+            else:
+                temp = value
+            target_dir = './data/' + temp
+            path = Path(target_dir)
+
+            # 检测是否访问的时自己的dir
+            if not temp.startswith(self.curuser['username']):
+                self.create_response_line(403,'Forbidden')
+                self.create_response_header('Content-Length', '0')
+                self.end_response_line()
+                self.end_response_headers()
+                return False
+
+            # 检测访问的dir是否存在
+            if not path.exists():
+                self.create_response_line(404,'Not Found')
+                self.create_response_header('Content-Length', '0')
+                self.end_response_line()
+                self.end_response_headers()
+                return False
+
+            # POST /upload?path=client2/ HTTP/1.1
+            # Host: 127.0.0.1:8080
+            # User-Agent: python-requests/2.28.2
+            # Accept-Encoding: gzip, deflate
+            # Accept: */*
+            # Connection: keep-alive
+            # Authorization: Basic Y2xpZW50MToxMjM=
+            # Content-Length: 157
+            # Content-Type: multipart/form-data; boundary=c253942774d70f82c4c368d2b740b346
+
+            # --c253942774d70f82c4c368d2b740b346
+            # Content-Disposition: form-data; name="firstFile"; filename="a.txt"
+
+            # sadfsdfasdf
+            # --c253942774d70f82c4c368d2b740b346--
+
+            content_type = self.get_request_header('Content-Type')
+            boundary = '--' + content_type.split('=')[1]
+            content = request_payload.split(boundary)
+            '''
+            data_raw的值
+            Content - Disposition: form - data;
+            name = "firstFile";
+            filename = "a.txt"
+
+            sadfsdfasdf
+            '''
+            data_raw = content[1].strip("\r\n")
+            if len(data_raw.split('\r\n\r\n')) > 1:
+                head,data = data_raw.split("\r\n\r\n",1)
+            else:
+                head,data = data_raw,''
+
+            filename = head.split("filename=")[1].strip('"')
+
+            with open(target_dir + filename, 'w') as f:
+                f.write(data)
+
+            self.create_response_line(200,"OK")
+            self.create_response_header('Content-Length','0')
+            self.end_response_line()
+            self.end_response_headers()
+
+
+        elif uri.startswith('/delete'):
+            pass
+
+
 
 
 
     def handle_head_request(self, request, connection):
-        # to be done
-        return
+        request_line, request_header, request_payload = self.split_request(request)
+        request_payload = request_payload.strip()
+        print('Handling POST request')
+
+        uri = request_line.split(" ")[1]
+        if uri == "/":
+            uri = "index.html"
+        file_path = pathlib.Path(__file__).parent / uri
+        print('file_path: %s' % file_path)
+
+        # 检查里路径里是否存在该文件
+        if not file_path.is_file():
+            connection.send(self.create_response(404, "File Not Found"))
+            return
+        # 检测目标文件类型
+        content_type = mimetypes.guess_type(file_path)[0]
+        if content_type is None:
+            # 通用的二进制文件类型
+            content_type = "application/octet-stream"
+        with open(file_path, "rb") as f:
+            connection.send(self.create_response(200, "OK", content_type))
+
+        if self.request_header_extractor(request_header, CON) == 'close':
+            connection.close()
 
 
     # 将request区分为三个部分
@@ -335,20 +442,26 @@ class Server:
             credentials = self.read_credentials_from_json(file_path)
             print(username, password)
             if username in credentials and password == credentials[username]:
+                self.curuser['username'] = username
+                self.curuser['password'] = password
                 self.set_cookie(username)
+
 
                 print(f"User:{username} Authentication success")
                 return True
             else:
                 # 登录信息不存在userData.json中,或者密码错误
                 self.create_response_line(401, "Unauthorized")
+                self.create_response_header('Content-Length', '0')
                 self.end_response_line()
+                self.end_response_headers()
                 print("Authentication failed")
                 return False
         else:
             # request中没有authorization信息
             self.create_response_line(401, "Unauthorized")
             self.create_response_header('WWW-Authenticated','Basic realm="Authorization Required"')
+            self.create_response_header('Content-Length', '0')
             self.end_response_line()
             self.end_response_headers()
             print("缺少Aut信息")
