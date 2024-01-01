@@ -1,9 +1,9 @@
 import requests
 
-
 def testing(num):
     if num == 1:
         headers = {"Authorization": "Basic Y2xpZW50MToxMjM="}
+        headers={"Authorization": "Basic ZGY6MTIzNA=="}
         q = requests.head('http://localhost:8080/', headers=headers)
         print(q)
     elif num == 2:
@@ -20,7 +20,15 @@ def testing(num):
         headers = {"Authorization": "Basic Y2xpZW50MToxMjM="}
         q = requests.get('http://localhost:8080/')
         print(q)
-
+    elif num == 5:
+        url = 'http://localhost:8080/'
+        headers = {"Authorization": "Basic Y2xpZW50MToxMjM="}
+        r = requests.get(url=url, headers=headers)
+        print(r.cookies.values()[0])
+        headers = {"Cookie": 'session-id=' + r.cookies.values()[0]}
+        q = requests.get('http://localhost:8080/', headers=headers)
+        print(q)
+        # print(q.cookies)
 
 
 if __name__ == '__main__':
@@ -32,6 +40,5 @@ if __name__ == '__main__':
             break
         else:
             testing(int(num))
-
 
 
