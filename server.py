@@ -111,7 +111,7 @@ class Server:
         # authenticate and cookie
         # 检查请求头中是否存在cookie:
 
-        if not ('mozilla' in self.get_request_header('User-Agent').lower()):
+        # if not ('mozilla' in self.get_request_header('User-Agent').lower()):
             if self.get_request_header('Cookie'):
                 session_id = self.get_request_header('Cookie')[11:]
                 if session_id in self.cookie_to_username:
@@ -172,7 +172,14 @@ class Server:
 
         # /a.txt
         uri = request_line.split(" ")[1]
+        if uri.startswith('/upload') or uri.startswith('/delete'):
+            self.create_response_line(405, "Method Not Allowed")
+            self.create_response_header("Content-Type", "application/octet-stream")
+            self.create_response_header("Content-Length", "0")
+            self.end_response_line()
+            self.end_response_headers()
 
+        query_code = None
         if "?" in uri:
             # userPath = 11912113/ query_string = SUSTech-HTTP=0
             userPath, query_string = uri.split("?")
@@ -211,8 +218,10 @@ class Server:
         elif uri.startswith('/'):
             if uri.startswith('/'):  # remove the leading '/'
                 temp = uri[1:]
-            file_path = pathlib.Path(__file__).parent / 'data/'
+            temp_path = str(pathlib.Path(__file__).parent)
+            file_path = temp_path + '/data/'
             file_path = file_path + self.curuser['username'] + '/' +temp
+            file_path = pathlib.Path(file_path)
             print('file_path: %s' % file_path)
             # 检查里路径里是否存在该文件
             if file_path.exists():
@@ -224,25 +233,41 @@ class Server:
                         # 通用的二进制文件类型
                         content_type = "application/octet-stream"
                     with open(file_path, "rb") as f:
-                        connection.send(self.create_response(200, "OK", content_type, content_size))
-                        connection.send(f.read())
+                        self.create_response_line(200,'OK')
+                        self.create_response_header('Content-Type', content_type)
+                        self.create_response_header('Content-Length',content_size)
+                        self.create_response_payload(f.read())
+                        self.end_response_line()
+                        self.end_response_headers()
+                        self.end_response_payload()
                 elif file_path.is_dir():
-                    # 检测目标文件类型
-                    content_type = mimetypes.guess_type(file_path)[0]
-                    if content_type is None:
-                        # 通用的二进制文件类型
-                        content_type = "application/octet-stream"
-                    # 读取目录下的文件
-                    html = self.render_dir_html(file_path)
-                    # save  the html into temp.html
-                    with open('temp.html', 'w') as f:
-                        f.write(html)
-                    self.send_file("temp.html", connection)
+                    # # 检测目标文件类型
+                    # content_type = mimetypes.guess_type(file_path)[0]
+                    # if content_type is None:
+                    #     # 通用的二进制文件类型
+                    #     content_type = "application/octet-stream"
+                    if query_code == 1000:
+                        # 读取目录下的文件
+                        pass
+
+
+                    #  query_code = 0 或者 default
+                    else:
+                        html = self.render_dir_html(file_path)
+                        # save  the html into temp.html
+                        with open('temp.html', 'w') as f:
+                            f.write(html)
+                        self.send_file("temp.html", connection)
                 else:
                     # send 404 not found
                     return
             else:
-                # send 404 not found
+                # 文件不存在
+                self.create_response_line(404, "Not found")
+                self.create_response_header("Content-Type", "application/octet-stream")
+                self.create_response_header("Content-Length", "0")
+                self.end_response_line()
+                self.end_response_headers()
                 return
 
         else:

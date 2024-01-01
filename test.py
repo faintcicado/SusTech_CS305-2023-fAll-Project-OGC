@@ -60,9 +60,8 @@ if __name__ == '__main__':
     path = Path('./data/client1/a.py')
     print(path.exists())
 
-    uri = 'upload?path= /11912113/'
-    path = uri.split('=')[1]
-    temp = path.split('/', 1)[1]
+
+    print(None == 1)
 
     while True:
         num = input('=====================\r\n')
