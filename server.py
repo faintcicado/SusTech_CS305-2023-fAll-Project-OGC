@@ -309,6 +309,8 @@ class Server:
     def render_dir_html(self, dir_path):
         # to be done
         html = "<html><head><title>Directory Listing</title></head><body>"
+        if dir_path != "/":
+            html += "<a href='../'>../</a><br>"
         for file in os.listdir(dir_path):
             if os.path.isdir(os.path.join(dir_path, file)):
                 file += "/"
