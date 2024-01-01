@@ -108,24 +108,29 @@ class Server:
 
         # authenticate and cookie
         # 检查请求头中是否存在cookie:
-        if self.get_request_header('Cookie'):
-            session_id = self.get_request_header('Cookie')[11:]
-            if session_id in self.cookie_to_username:
-                if session_id in self.cookie_to_lifetime and datetime.datetime.utcnow() > self.cookie_to_lifetime[session_id]:
-                    pass
-                else:
-        #           cookie过期 返回401 或者 不存在该cookie(cookie_to_lifetime)
-                    self.create_response_line(401,'Unauthorized')
-                    self.cookie_to_lifetime.pop(session_id)
-                    self.cookie_to_username.pop(session_id)
-            # invalid cookie
-            else:
-                self.create_response_line(401,'Unauthorized')
+        
+        self.send_response_line(200, 'OK')
+        self.send_response_header(CT, 'text/html')
 
-        # 请求头中不存在 Cookie header
-        elif(not self.authenticate(request, connection)):
-            # 认证成功后set-cookie
-            return False
+        if not ('mozilla' in self.get_request_header('User-Agent').lower()):
+            if self.get_request_header('Cookie'):
+                session_id = self.get_request_header('Cookie')[11:]
+                if session_id in self.cookie_to_username:
+                    if session_id in self.cookie_to_lifetime and datetime.datetime.utcnow() > self.cookie_to_lifetime[session_id]:
+                        pass
+                    else:
+                        print("\ncookie过期 返回401 或者 不存在该cookie(cookie_to_lifetime)")
+                        self.create_response_line(401,'Unauthorized')
+                        self.cookie_to_lifetime.pop(session_id)
+                        self.cookie_to_username.pop(session_id)
+                # invalid cookie
+                else:
+                    self.create_response_line(401,'Unauthorized')
+
+            # 请求头中不存在 Cookie header
+            elif(not self.authenticate(request, connection)):
+                # 认证成功后set-cookie
+                return False
 
 
         request_line = request_line.upper()
@@ -156,13 +161,14 @@ class Server:
 
 
     def handle_get_post_request(self, request, connection, isHead):
-
-        request_line, request_header, request_payload = self.split_request(request)
         print ('Handling GET request')
         # "GET / HTTP/1.1\r\n" 在这个情况下uri = GET 和 HTTP/1.1\r\n" 中间的 '/'
-        print (f'{request_line}')
-        print (f'{request_header}')
-        print (f'{request_payload}')
+
+        request_line, request_header, request_payload = self.split_request(request)
+        # print (f'{request_line}')
+        # print (f'{request_header}')
+        # print (f'{request_payload}')
+        
         uri = request_line.split(" ")[1]
         if uri == "/":
             uri = "index.html"    
@@ -208,13 +214,21 @@ class Server:
     def send_file(self, file_path, connection):
         with open(file_path, "rb") as f:
             self.create_response_line(200, "OK")
-            self.create_response_header("Content-Type", mimetypes.guess_type(file_path)[0])
             self.create_response_header("Content-Length", os.path.getsize(file_path))
+            self.create_response_header("Content-Type", mimetypes.guess_type(file_path)[0])
             self.create_response_payload(f.read())
             self.end_response_line()
             self.end_response_headers()
             self.end_response_payload()
+
+    def send_response_header(self, header, value):
+        self.create_response_header(header, value)
+        self.end_response_headers()
         
+    def send_response_line(self, status_code, status_message):
+        self.create_response_line(status_code, status_message)
+        self.end_response_line()
+
     def render_dir_html(self, dir_path):
         # to be done
         html = "<html><body>"
@@ -263,6 +277,7 @@ class Server:
         if self.request_line_sended:
             self.response_headers = self.response_headers + (f"\r\n")
             self.flush_headers()
+            self.response_headers = f''
         else:
             print("Error: Response headers should be sent after response line has been sent")
 
@@ -274,6 +289,7 @@ class Server:
     def end_response_line(self):
         self.connection.sendall(self.response_line.encode())
         self.request_line_sended = True
+        self.response_line = f''
 
     def create_response_payload(self, payload):
         if isinstance(payload, str):
@@ -285,6 +301,7 @@ class Server:
 
     def end_response_payload(self):
             self.connection.sendall(self.response_payload)
+            self.response_payload = b''
 
 
 

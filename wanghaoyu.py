@@ -277,14 +277,14 @@ class BaseHTTPRequestHandler:
         for key, value in headers.items() if headers else []:
             self.send_header(key, value)
         response_body = f"""
-<html>
-    <head><title>Error {code}</title></head>
-    <body>
-        <h1>Error {code}</h1>
-        <p>{code.phrase} {code.description}</p>
-        <p>{message}</p> 
-    </body>
-</html>
+                    <html>
+                        <head><title>Error {code}</title></head>
+                        <body>
+                            <h1>Error {code}</h1>
+                            <p>{code.phrase} {code.description}</p>
+                            <p>{message}</p> 
+                        </body>
+                    </html>
                         """.encode()
         self.send_header("Content-Length", str(len(response_body)))
         self.end_headers()
@@ -499,15 +499,15 @@ class HttpRequestHandler(BaseHTTPRequestHandler):
                     dir_list = [f'<li><a href="/?SUSTech-HTTP=0">/</a></li>'] + dir_list
                     dir_list = "\n            ".join(dir_list)
                     dir_list = f"""<html>
-    <head><title>Index of {self.request_path}</title></head>
-    <body>
-        <h1>Index of {self.request_path}</h1>
-        <ul>
-            {dir_list}
-        </ul>
-    </body>
-</html>
-""".encode()
+                                            <head><title>Index of {self.request_path}</title></head>
+                                            <body>
+                                                <h1>Index of {self.request_path}</h1>
+                                                <ul>
+                                                    {dir_list}
+                                                </ul>
+                                            </body>
+                                        </html>
+                                        """.encode()
                 elif self.request_params["SUSTech-HTTP"] == "1":
                     # SUSTech-HTTP字段为1, 返回列表
                     dir_list = str(
