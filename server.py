@@ -49,6 +49,7 @@ class Server:
     cookie_to_username = {}
     cookie_to_lifetime = {}
     cookie_lifetime = datetime.timedelta(seconds=5)
+    curuser = {}
 
     def __init__(self,host, port):
         print(f"Server working on {host} {port}")
@@ -167,6 +168,23 @@ class Server:
         print (f'{request_payload}')
         
         uri = request_line.split(" ")[1]
+        print (f'original uri:{uri}')
+        if "?" in uri:
+            # 11912113/?SUSTech-HTTP=0
+            userPath, query_string = uri.split("?")# userPath = 11912113/ query_string = SUSTech-HTTP=0
+            query_string = query_string.split("=")[1] # query_string = 0
+            print("Path:", userPath)
+            print("SUSTech-HTTP", query_string)
+            if userPath.startswith('/'): # remove the leading '/'
+                userPath = userPath[1:]
+            uri = "data/" + userPath
+        else:
+            if uri.startswith('/'): # remove the leading '/'
+                uri = uri[1:]
+            uri = "data/" + uri
+
+        print (f'edited uri:{uri}')
+
         if uri == "/":
             uri = "index.html"
             file_path = pathlib.Path(__file__).parent / uri
@@ -178,12 +196,11 @@ class Server:
             print('file_path: %s' % file_path)
             self.send_file(file_path, connection)
             # write a elif when uri begin with "/data/" or "data/" or "/data" or "data"
-        elif uri.startswith("/data/") or uri.startswith("data/") or uri.startswith("/data") or uri.startswith("data"):
+        elif uri.startswith("data") or uri.startswith("data/") or uri.startswith("/data") or uri.startswith("/data/"):
             if uri.startswith('/'): # remove the leading '/'
                 uri = uri[1:]
             file_path = pathlib.Path(__file__).parent / uri
             print('file_path: %s' % file_path)
-
             # 检查里路径里是否存在该文件
             if file_path.exists():
                 if file_path.is_file():
@@ -197,8 +214,17 @@ class Server:
                         connection.send(self.create_response(200, "OK", content_type, content_size))
                         connection.send(f.read())
                 elif file_path.is_dir():
-                    pass
-                    # render_dir_html();
+                    # 检测目标文件类型
+                    content_type = mimetypes.guess_type(file_path)[0]
+                    if content_type is None:
+                        # 通用的二进制文件类型
+                        content_type = "application/octet-stream"
+                    # 读取目录下的文件
+                    html = self.render_dir_html(file_path)
+                    #save  the html into temp.html
+                    with open('temp.html','w') as f:
+                        f.write(html)
+                    self.send_file("temp.html",connection)
                 else:
                     # send 404 not found
                     return
@@ -240,8 +266,10 @@ class Server:
 
     def render_dir_html(self, dir_path):
         # to be done
-        html = "<html><body>"
+        html = "<html><head><title>Directory Listing</title></head><body>"
         for file in os.listdir(dir_path):
+            if os.path.isdir(os.path.join(dir_path, file)):
+                file += "/"
             html += f"<a href='{file}'>{file}</a><br>"
         html += "</body></html>"
         return html
