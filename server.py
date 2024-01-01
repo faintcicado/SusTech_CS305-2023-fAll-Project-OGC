@@ -108,9 +108,6 @@ class Server:
 
         # authenticate and cookie
         # 检查请求头中是否存在cookie:
-        
-        self.send_response_line(200, 'OK')
-        self.send_response_header(CT, 'text/html')
 
         if not ('mozilla' in self.get_request_header('User-Agent').lower()):
             if self.get_request_header('Cookie'):
@@ -165,9 +162,9 @@ class Server:
         # "GET / HTTP/1.1\r\n" 在这个情况下uri = GET 和 HTTP/1.1\r\n" 中间的 '/'
 
         request_line, request_header, request_payload = self.split_request(request)
-        # print (f'{request_line}')
-        # print (f'{request_header}')
-        # print (f'{request_payload}')
+        print (f'{request_line}')
+        print (f'{request_header}')
+        print (f'{request_payload}')
         
         uri = request_line.split(" ")[1]
         if uri == "/":
@@ -209,6 +206,20 @@ class Server:
             else:
                 # send 404 not found
                 return
+        elif uri == "/favicon.ico":
+            uri = "favicon.ico"
+            file_path = pathlib.Path(__file__).parent / uri
+            print('file_path: %s' % file_path)
+            self.send_file(file_path, connection)
+        else:
+            self.create_response_line(404, "Not found")
+            self.create_response_header("Content-Type", "application/octet-stream")
+            self.create_response_header("Content-Length", "0")
+            self.create_response_payload(f.read())
+            self.end_response_line()
+            self.end_response_headers()
+            self.end_response_payload()
+            return
 
 
     def send_file(self, file_path, connection):
