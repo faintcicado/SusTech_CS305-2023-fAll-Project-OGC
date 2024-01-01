@@ -175,30 +175,8 @@ class Server:
 
 
     def handle_head_request(self, request, connection):
-        request_line, request_header, request_payload = self.split_request(request)
-        request_payload = request_payload.strip()
-        print('Handling POST request')
-
-        uri = request_line.split(" ")[1]
-        if uri == "/":
-            uri = "index.html"
-        file_path = pathlib.Path(__file__).parent / uri
-        print('file_path: %s' % file_path)
-
-        # 检查里路径里是否存在该文件
-        if not file_path.is_file():
-            connection.send(self.create_response(404, "File Not Found"))
-            return
-        # 检测目标文件类型
-        content_type = mimetypes.guess_type(file_path)[0]
-        if content_type is None:
-            # 通用的二进制文件类型
-            content_type = "application/octet-stream"
-        with open(file_path, "rb") as f:
-            connection.send(self.create_response(200, "OK", content_type))
-
-        if self.request_header_extractor(request_header, CON) == 'close':
-            connection.close()
+        # to be done
+        return
 
 
     # 将request区分为三个部分
