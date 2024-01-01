@@ -14,13 +14,16 @@ import json
 import secrets
 import base64
 import shutil
+import _thread
 from pathlib import Path
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Simple file manager server")
     parser.add_argument("-p", "--port", type=int, default=8080, help="The port to listen on")
     parser.add_argument("-i", "--host", type=str, default='localhost', help="The host")
     return parser.parse_args()
+
 
 # - Content-Type: the size of the message body, in bytes
 # - Content-Length: the original media type of the resource
@@ -38,6 +41,7 @@ AUT = 'Authorization'
 TE = 'Transfer-Encoding'
 CR = 'Content-Range'
 
+
 class Server:
     request_headers = {}
     response_line = f''
@@ -50,8 +54,8 @@ class Server:
     cookie_to_lifetime = {}
     cookie_lifetime = datetime.timedelta(seconds=5)
     curuser = {}
-    
-    def __init__(self,host, port):
+
+    def __init__(self, host, port):
         print(f"Server working on {host} {port}")
 
         self.port = port
@@ -65,16 +69,16 @@ class Server:
 
     def run(self):
         # 等待client链接
+
         while True:
             # 返回一个用来传输数据的socket -> connection
             connection, address = self.server_socket.accept()
+            client_thread = threading.Thread(target=self.handle_connection, args=(connection,))
+            client_thread.start()
 
-            self.handle_connection(connection, address)
-
-    def handle_connection(self, connection, address):
+    def handle_connection(self, connection):
         try:
             self.connection = connection
-            # self.receive_request(connection)
             while self.handle_request(connection):
                 pass
         except Exception:
@@ -82,66 +86,70 @@ class Server:
         finally:
             connection.close()
 
-
-
     def handle_request(self, connection):
         request = b""
 
         # while True:
-            # 阻塞程序，持续接收数据
+        # 阻塞程序，持续接收数据
         chunk = connection.recv(4096)
         request += chunk
-        if request == b'':return False
+        if request == b'': return False
 
         request = request.decode()
 
         self.request_line_sended = False
         # request_line =  "GET / HTTP/1.1\r\n"
-        request_line,temp =  request.split("\r\n", 1)
+        request_line, temp = request.split("\r\n", 1)
         # request_headers_temp1 :
-        request_headers_temp1,request_payload = temp.split("\r\n\r\n",1)
+        request_headers_temp1, request_payload = temp.split("\r\n\r\n", 1)
 
         request_headers_temp2 = request_headers_temp1.split("\r\n")
         for i in request_headers_temp2:
-            header,value = i.split(": ")
+            header, value = i.split(": ")
             self.request_headers[header] = value
 
         # authenticate and cookie
         # 检查请求头中是否存在cookie:
 
-        if not ('mozilla' in self.get_request_header('User-Agent').lower()):
+        # if not ('mozilla' in self.get_request_header('User-Agent').lower()):
             if self.get_request_header('Cookie'):
                 session_id = self.get_request_header('Cookie')[11:]
                 if session_id in self.cookie_to_username:
-                    if session_id in self.cookie_to_lifetime and datetime.datetime.utcnow() > self.cookie_to_lifetime[session_id]:
+                    if session_id in self.cookie_to_lifetime and datetime.datetime.utcnow() > self.cookie_to_lifetime[
+                        session_id]:
                         pass
                     else:
                         print("\ncookie过期 返回401 或者 不存在该cookie(cookie_to_lifetime)")
-                        self.create_response_line(401,'Unauthorized')
+                        self.create_response_line(401, 'Unauthorized')
                         self.cookie_to_lifetime.pop(session_id)
                         self.cookie_to_username.pop(session_id)
+                        return False
                 # invalid cookie
                 else:
-                    self.create_response_line(401,'Unauthorized')
+                    self.create_response_line(401, 'Unauthorized')
+                    self.create_response_header('Content-Length', '0')
+                    self.end_response_line()
+                    self.end_response_headers()
+                    return False
 
             # 请求头中不存在 Cookie header
-            elif(not self.authenticate(request, connection)):
+            elif (not self.authenticate(request, connection)):
                 # 认证成功后set-cookie
                 return False
-
 
         request_line = request_line.upper()
         if request_line.startswith("GET"):
             # 将整个请求传入进行处理
-            self.handle_get_post_request(request, connection,False)
+            self.handle_get_post_request(request, connection, False)
         elif request_line.startswith("POST"):
             self.handle_post_request(request, connection)
         elif request_line.startswith("HEAD"):
-            self.handle_get_post_request(request, connection,False)
+            self.handle_get_post_request(request, connection, True)
         else:
             connection.send(self.create_response(405, "Method Not Allowed"))
-
-
+            self.create_response_header('Content-Length', '0')
+            self.end_response_line()
+            self.end_response_headers()
 
         # 检测是否要关闭链接
         if self.get_request_header(CON).lower() == 'keep-alive':
@@ -155,51 +163,65 @@ class Server:
             if temp_cookie not in self.cookie_to_username:
                 return temp_cookie
 
-
-
     def handle_get_post_request(self, request, connection, isHead):
         request_line, request_header, request_payload = self.split_request(request)
-        print ('Handling GET request')
+        print('Handling GET request')
         # "GET / HTTP/1.1\r\n" 在这个情况下uri = GET 和 HTTP/1.1\r\n" 中间的 '/'
 
         request_line, request_header, request_payload = self.split_request(request)
-        print (f'{request_line}')
-        print (f'{request_header}')
-        print (f'{request_payload}')
-        
-        uri = request_line.split(" ")[1]
-        print (f'original uri:{uri}')
-        if "?" in uri:
-            # 11912113/?SUSTech-HTTP=0
-            userPath, query_string = uri.split("?")# userPath = 11912113/ query_string = SUSTech-HTTP=0
-            query_string = query_string.split("=")[1] # query_string = 0
-            print("Path:", userPath)
-            print("SUSTech-HTTP", query_string)
-            if userPath.startswith('/'): # remove the leading '/'
-                userPath = userPath[1:]
-            uri = "data/" + userPath
-        else:
-            if uri.startswith('/'): # remove the leading '/'
-                uri = uri[1:]
-            uri = "data/" + uri
 
-        print (f'edited uri:{uri}')
+        # /a.txt
+        uri = request_line.split(" ")[1]
+        if uri.startswith('/upload') or uri.startswith('/delete'):
+            self.create_response_line(405, "Method Not Allowed")
+            self.create_response_header("Content-Type", "application/octet-stream")
+            self.create_response_header("Content-Length", "0")
+            self.end_response_line()
+            self.end_response_headers()
+
+        query_code = None
+        if "?" in uri:
+            # userPath = 11912113/ query_string = SUSTech-HTTP=0
+            userPath, query_string = uri.split("?")
+
+            # query_string = 0
+            SUSTech, query_code = query_string.split("=")
+
+            # invalid query string
+            if not (SUSTech == 'SUSTech-HTTP'):
+                self.create_response_line(400, 'Bad Request')
+                self.create_response_header('Content-Length', '0')
+                self.end_response_line()
+                self.end_response_headers()
+
+        # 不包含 SUSTech-HTTP=的情况
 
         if uri == "/":
-            uri = "index.html"
-            file_path = pathlib.Path(__file__).parent / uri
+            temp = "index.html"
+            file_path = pathlib.Path(__file__).parent / temp
             print('file_path: %s' % file_path)
             self.send_file(file_path, connection)
+
         elif uri == "/teapot":
-            uri = "teapot.html"
-            file_path = pathlib.Path(__file__).parent / uri
+            temp = "teapot.html"
+            file_path = pathlib.Path(__file__).parent / temp
             print('file_path: %s' % file_path)
             self.send_file(file_path, connection)
             # write a elif when uri begin with "/data/" or "data/" or "/data" or "data"
-        elif uri.startswith("data") or uri.startswith("data/") or uri.startswith("/data") or uri.startswith("/data/"):
-            if uri.startswith('/'): # remove the leading '/'
-                uri = uri[1:]
-            file_path = pathlib.Path(__file__).parent / uri
+
+        elif uri == "/favicon.ico":
+            temp = "favicon.ico"
+            file_path = pathlib.Path(__file__).parent / temp
+            print('file_path: %s' % file_path)
+            self.send_file(file_path, connection)
+
+        elif uri.startswith('/'):
+            if uri.startswith('/'):  # remove the leading '/'
+                temp = uri[1:]
+            temp_path = str(pathlib.Path(__file__).parent)
+            file_path = temp_path + '/data/'
+            file_path = file_path + self.curuser['username'] + '/' +temp
+            file_path = pathlib.Path(file_path)
             print('file_path: %s' % file_path)
             # 检查里路径里是否存在该文件
             if file_path.exists():
@@ -211,38 +233,49 @@ class Server:
                         # 通用的二进制文件类型
                         content_type = "application/octet-stream"
                     with open(file_path, "rb") as f:
-                        connection.send(self.create_response(200, "OK", content_type, content_size))
-                        connection.send(f.read())
+                        self.create_response_line(200,'OK')
+                        self.create_response_header('Content-Type', content_type)
+                        self.create_response_header('Content-Length',content_size)
+                        self.create_response_payload(f.read())
+                        self.end_response_line()
+                        self.end_response_headers()
+                        self.end_response_payload()
                 elif file_path.is_dir():
-                    # 检测目标文件类型
-                    content_type = mimetypes.guess_type(file_path)[0]
-                    if content_type is None:
-                        # 通用的二进制文件类型
-                        content_type = "application/octet-stream"
-                    # 读取目录下的文件
-                    html = self.render_dir_html(file_path)
-                    #save  the html into temp.html
-                    with open('temp.html','w') as f:
-                        f.write(html)
-                    self.send_file("temp.html",connection)
+                    # # 检测目标文件类型
+                    # content_type = mimetypes.guess_type(file_path)[0]
+                    # if content_type is None:
+                    #     # 通用的二进制文件类型
+                    #     content_type = "application/octet-stream"
+                    if query_code == 1000:
+                        # 读取目录下的文件
+                        pass
+
+
+                    #  query_code = 0 或者 default
+                    else:
+                        html = self.render_dir_html(file_path)
+                        # save  the html into temp.html
+                        with open('temp.html', 'w') as f:
+                            f.write(html)
+                        self.send_file("temp.html", connection)
                 else:
                     # send 404 not found
                     return
             else:
-                # send 404 not found
+                # 文件不存在
+                self.create_response_line(404, "Not found")
+                self.create_response_header("Content-Type", "application/octet-stream")
+                self.create_response_header("Content-Length", "0")
+                self.end_response_line()
+                self.end_response_headers()
                 return
-        elif uri == "/favicon.ico":
-            uri = "favicon.ico"
-            file_path = pathlib.Path(__file__).parent / uri
-            print('file_path: %s' % file_path)
-            self.send_file(file_path, connection)
+
         else:
             self.create_response_line(404, "Not found")
             self.create_response_header("Content-Type", "application/octet-stream")
             self.create_response_header("Content-Length", "0")
             self.end_response_line()
             self.end_response_headers()
-            self.end_response_payload()
             return
 
     def send_file(self, file_path, connection):
@@ -285,13 +318,12 @@ class Server:
         html += "</body></html>"
         return html
 
-
     def handle_post_request(self, request, connection):
         request_line, request_header, request_payload = self.split_request(request)
         print('Handling POST request')
         uri = request_line.split(" ")[1]
-        if not(uri.startswith('/upload') or uri.startswith('/delete')):
-            self.create_response_line(405,'Method Not Allowed')
+        if not (uri.startswith('/upload') or uri.startswith('/delete')):
+            self.create_response_line(405, 'Method Not Allowed')
             self.create_response_header('Content-Length', '0')
             self.end_response_line()
             self.end_response_headers()
@@ -300,7 +332,7 @@ class Server:
         if uri.startswith('/upload'):
             # 检测头部中是否包含 ? path
             if ('?' not in uri or 'path' not in uri):
-                self.create_response_line(400,'Bad Request')
+                self.create_response_line(400, 'Bad Request')
                 self.create_response_header('Content-Length', '0')
                 self.end_response_line()
                 self.end_response_headers()
@@ -312,7 +344,7 @@ class Server:
             value = uri.split('=')[1]
             temp = ''
             if value.startswith('/'):
-                temp = value.split('/',1)[1]
+                temp = value.split('/', 1)[1]
             else:
                 temp = value
             target_file = './data/' + temp
@@ -320,7 +352,7 @@ class Server:
 
             # 检测是否访问的时自己的dir
             if not temp.startswith(self.curuser['username']):
-                self.create_response_line(403,'Forbidden')
+                self.create_response_line(403, 'Forbidden')
                 self.create_response_header('Content-Length', '0')
                 self.end_response_line()
                 self.end_response_headers()
@@ -328,7 +360,7 @@ class Server:
 
             # 检测访问的dir是否存在
             if not path.exists():
-                self.create_response_line(404,'Not Found')
+                self.create_response_line(404, 'Not Found')
                 self.create_response_header('Content-Length', '0')
                 self.end_response_line()
                 self.end_response_headers()
@@ -363,17 +395,17 @@ class Server:
             '''
             data_raw = content[1].strip("\r\n")
             if len(data_raw.split('\r\n\r\n')) > 1:
-                head,data = data_raw.split("\r\n\r\n",1)
+                head, data = data_raw.split("\r\n\r\n", 1)
             else:
-                head,data = data_raw,''
+                head, data = data_raw, ''
 
             filename = head.split("filename=")[1].strip('"')
 
             with open(target_file + filename, 'w') as f:
                 f.write(data)
 
-            self.create_response_line(200,"OK")
-            self.create_response_header('Content-Length','0')
+            self.create_response_line(200, "OK")
+            self.create_response_header('Content-Length', '0')
             self.end_response_line()
             self.end_response_headers()
 
@@ -421,10 +453,6 @@ class Server:
             self.end_response_line()
             self.end_response_headers()
 
-
-
-
-
     def handle_head_request(self, request, connection):
         request_line, request_header, request_payload = self.split_request(request)
         request_payload = request_payload.strip()
@@ -451,14 +479,12 @@ class Server:
         if self.request_header_extractor(request_header, CON) == 'close':
             connection.close()
 
-
     # 将request区分为三个部分
     def split_request(self, request):
         # 先提取request_line
         request_line, request_body = request.split("\r\n", 1)
-        request_header, request_payload = request_body.split("\r\n\r\n",1)
-        return request_line,request_header,request_payload
-
+        request_header, request_payload = request_body.split("\r\n\r\n", 1)
+        return request_line, request_header, request_payload
 
     # ----------------------------------------------------------------
     # 提取一个headers中指定header的状态
@@ -469,11 +495,11 @@ class Server:
             return self.request_headers[str(target_header)]
 
     # 将全局的response头修改
-    def create_response_line(self,status_code,status_message):
+    def create_response_line(self, status_code, status_message):
         self.response_line = f"HTTP/1.1 {status_code} {status_message}\r\n"
 
     # 增加一个回复header
-    def create_response_header(self,header,value):
+    def create_response_header(self, header, value):
         self.response_headers = self.response_headers + (f"{header}: {value}\r\n")
 
     # 结束headers的编辑
@@ -504,10 +530,8 @@ class Server:
             raise ValueError("Invalid payload type. Expected string or bytes.")
 
     def end_response_payload(self):
-            self.connection.sendall(self.response_payload)
-            self.response_payload = b''
-
-
+        self.connection.sendall(self.response_payload)
+        self.response_payload = b''
 
     def read_credentials_from_json(self, file_path):
         with open(file_path, 'r') as file:
@@ -517,15 +541,13 @@ class Server:
                 credentials_list[user_data['username']] = user_data['password']
             return credentials_list
 
-    def set_cookie(self,username):
+    def set_cookie(self, username):
         temp_cookie = self.generate_random_cookie()
         self.cookie_to_username[temp_cookie] = username
         temp_cookie_lifetime = datetime.datetime.utcnow() + self.cookie_lifetime
         self.cookie_to_lifetime[temp_cookie] = temp_cookie_lifetime
         # 编辑Set-Cookie header
-        self.create_response_header('Set-Cookie',f'session-id={temp_cookie};Expires={temp_cookie_lifetime}')
-
-
+        self.create_response_header('Set-Cookie', f'session-id={temp_cookie};Expires={temp_cookie_lifetime}')
 
     # add simple authentication function for this server following rfc7235
     def authenticate(self, request, connection):
@@ -543,7 +565,6 @@ class Server:
                 self.curuser['password'] = password
                 self.set_cookie(username)
 
-
                 print(f"User:{username} Authentication success")
                 return True
             else:
@@ -557,16 +578,17 @@ class Server:
         else:
             # request中没有authorization信息
             self.create_response_line(401, "Unauthorized")
-            self.create_response_header('WWW-Authenticated','Basic realm="Authorization Required"')
+            self.create_response_header('WWW-Authenticated', 'Basic realm="Authorization Required"')
             self.create_response_header('Content-Length', '0')
             self.end_response_line()
             self.end_response_headers()
             print("缺少Aut信息")
             return False
 
+
 def main():
     args = parse_args()
-    server = Server(args.host,args.port)
+    server = Server(args.host, args.port)
     server.run()
 
 

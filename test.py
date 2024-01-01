@@ -48,6 +48,11 @@ def testing(num):
         headers = {"Authorization": "Basic Y2xpZW50MToxMjM="}
         r = requests.post(url=url, headers=headers)
         print(r)
+    elif num == 8:
+        # 2
+        headers = {"Authorization": "Basic Y2xpZW50MToxMjM="}
+        r = requests.get(url='http://127.0.0.1:8080/a.txt', headers=headers)
+        print(r.content.decode())
 
 if __name__ == '__main__':
     print("====================\r\nplease select test num\r\ninput 0 to exit\r\n====================\r\n")
@@ -55,9 +60,8 @@ if __name__ == '__main__':
     path = Path('./data/client1/a.py')
     print(path.exists())
 
-    uri = 'upload?path= /11912113/'
-    path = uri.split('=')[1]
-    temp = path.split('/', 1)[1]
+
+    print(None == 1)
 
     while True:
         num = input('=====================\r\n')
