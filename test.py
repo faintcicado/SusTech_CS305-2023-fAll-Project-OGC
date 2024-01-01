@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import requests
 
 def testing(num):
@@ -29,11 +31,27 @@ def testing(num):
         q = requests.get('http://localhost:8080/', headers=headers)
         print(q)
         # print(q.cookies)
+    elif num == 6:
+        # 3.1
+        files = {"firstFile": open('tmp/a.txt', "rb")}
 
+        data = {}
+        headers = {"Authorization": "Basic Y2xpZW50MToxMjM="}
+        r = requests.post(url='http://127.0.0.1:8080/upload?path=client1/', data=data, headers=headers, files=files)
+        print(r)
+        r = requests.post(url='http://127.0.0.1:8080/upload?path=client2/', data=data, headers=headers, files=files)
+        print(r)
 
 if __name__ == '__main__':
     print("====================\r\nplease select test num\r\ninput 0 to exit\r\n====================\r\n")
     print()
+    path = Path('./data/client1')
+    print(path.exists())
+
+    uri = 'upload?path= /11912113/'
+    path = uri.split('=')[1]
+    temp = path.split('/', 1)[1]
+
     while True:
         num = input('=====================\r\n')
         if num == '0':
