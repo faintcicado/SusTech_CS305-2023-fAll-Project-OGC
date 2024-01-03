@@ -17,26 +17,14 @@ import shutil
 import _thread
 from pathlib import Path
 
-import cryptograph
-# RSA
-from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import padding as pd_rsa
 
-# AES
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives import padding as pd_aes
+import PyCryptodome
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Simple file manager server")
-    parser.add_argument("-p", "--port", type=int,
-                        default=8080, help="The port to listen on")
-    parser.add_argument("-i", "--host", type=str,
-                        default='localhost', help="The host")
+    parser.add_argument("-p", "--port", type=int, default=8080, help="The port to listen on")
+    parser.add_argument("-i", "--host", type=str, default='localhost', help="The host")
     return parser.parse_args()
 
 
@@ -75,8 +63,7 @@ class Server:
 
         self.port = port
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server_socket.setsockopt(
-            socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         # 将server绑定到指定host和port上
         self.server_socket.bind((host, port))
         # 最多等待10个客户端的链接
@@ -88,8 +75,7 @@ class Server:
         while True:
             # 返回一个用来传输数据的socket -> connection
             connection, address = self.server_socket.accept()
-            client_thread = threading.Thread(
-                target=self.handle_connection, args=(connection,))
+            client_thread = threading.Thread(target=self.handle_connection, args=(connection,))
             client_thread.start()
 
     def handle_connection(self, connection):
@@ -114,8 +100,7 @@ class Server:
         # 阻塞程序，持续接收数据
         chunk = connection.recv(4096)
         request += chunk
-        if request == b'':
-            return False
+        if request == b'': return False
 
         request = request.decode()
 
@@ -188,20 +173,17 @@ class Server:
                 return temp_cookie
 
     def handle_get_post_request(self, request, connection, isHead):
-        request_line, request_header, request_payload = self.split_request(
-            request)
+        request_line, request_header, request_payload = self.split_request(request)
         print('Handling GET request')
         # "GET / HTTP/1.1\r\n" 在这个情况下uri = GET 和 HTTP/1.1\r\n" 中间的 '/'
 
-        request_line, request_header, request_payload = self.split_request(
-            request)
+        request_line, request_header, request_payload = self.split_request(request)
 
         # /a.txt
         uri = request_line.split(" ")[1]
         if uri.startswith('/upload') or uri.startswith('/delete'):
             self.create_response_line(405, "Method Not Allowed")
-            self.create_response_header(
-                "Content-Type", "application/octet-stream")
+            self.create_response_header("Content-Type", "application/octet-stream")
             self.create_response_header("Content-Length", "0")
             self.end_response_line()
             self.end_response_headers()
@@ -251,7 +233,7 @@ class Server:
         if uri.startswith('/'):
             temp_path = str(pathlib.Path(__file__).parent)
             file_path = temp_path + '/data'
-            file_path = file_path + uri
+            file_path = file_path +  uri
             file_path = pathlib.Path(file_path)
 
             # 检查里路径里是否存在该文件
@@ -265,11 +247,9 @@ class Server:
                         # 默认的文件类型
                         content_type = "application/octet-stream"
                     with open(file_path, "rb") as f:
-                        self.create_response_line(200, 'OK')
-                        self.create_response_header(
-                            'Content-Type', content_type)
-                        self.create_response_header(
-                            'Content-Length', content_size)
+                        self.create_response_line(200,'OK')
+                        self.create_response_header('Content-Type', content_type)
+                        self.create_response_header('Content-Length',content_size)
                         self.end_response_line()
                         self.end_response_headers()
                         if not isHead:
@@ -284,10 +264,8 @@ class Server:
                         list = self.get_dir_list(file_path)
                         # 读取目录下的文件
                         self.create_response_line(200, 'OK')
-                        self.create_response_header(
-                            'Content-Type', 'application/octet-stream')
-                        self.create_response_header(
-                            'Content-Length', len(str(list).encode()))
+                        self.create_response_header('Content-Type', 'application/octet-stream')
+                        self.create_response_header('Content-Length', len(str(list).encode()))
                         # self.create_response_payload(str(list))
                         self.end_response_line()
                         self.end_response_headers()
@@ -302,11 +280,10 @@ class Server:
                         # save  the html into temp.html
                         with open('temp.html', 'w') as f:
                             f.write(html)
-                        self.send_file("temp.html", connection, isHead)
+                        self.send_file("temp.html", connection,isHead)
                 else:
                     self.create_response_line(404, "Not found")
-                    self.create_response_header(
-                        "Content-Type", "application/octet-stream")
+                    self.create_response_header("Content-Type", "application/octet-stream")
                     self.create_response_header("Content-Length", "0")
                     self.end_response_line()
                     self.end_response_headers()
@@ -314,8 +291,7 @@ class Server:
             else:
                 # 文件不存在
                 self.create_response_line(404, "Not found")
-                self.create_response_header(
-                    "Content-Type", "application/octet-stream")
+                self.create_response_header("Content-Type", "application/octet-stream")
                 self.create_response_header("Content-Length", "0")
                 self.end_response_line()
                 self.end_response_headers()
@@ -324,8 +300,7 @@ class Server:
         else:
             # uri 不以/开头的情况
             self.create_response_line(404, "Not found")
-            self.create_response_header(
-                "Content-Type", "application/octet-stream")
+            self.create_response_header("Content-Type", "application/octet-stream")
             self.create_response_header("Content-Length", "0")
             self.end_response_line()
             self.end_response_headers()
@@ -334,10 +309,8 @@ class Server:
     def send_file(self, file_path, connection, isHead):
         with open(file_path, "rb") as f:
             self.create_response_line(200, "OK")
-            self.create_response_header(
-                "Content-Length", os.path.getsize(file_path))
-            self.create_response_header(
-                "Content-Type", mimetypes.guess_type(file_path)[0])
+            self.create_response_header("Content-Length", os.path.getsize(file_path))
+            self.create_response_header("Content-Type", mimetypes.guess_type(file_path)[0])
 
             self.end_response_line()
             self.end_response_headers()
@@ -353,14 +326,15 @@ class Server:
         self.create_response_line(status_code, status_message)
         self.end_response_line()
 
-    # example return: ["123.png", "666/", "abc.py", "favicon.ico"]
-    def get_dir_list(self, dir_path):
+    def get_dir_list(self, dir_path): # example return: ["123.png", "666/", "abc.py", "favicon.ico"]
         dir_list = []
         for file in os.listdir(dir_path):
             if os.path.isdir(os.path.join(dir_path, file)):
                 file += "/"
             dir_list.append(file)
         return dir_list
+        
+
 
     def render_dir_html(self, dir_path):
         # to be done
@@ -375,8 +349,7 @@ class Server:
         return html
 
     def handle_post_request(self, request, connection):
-        request_line, request_header, request_payload = self.split_request(
-            request)
+        request_line, request_header, request_payload = self.split_request(request)
         print('Handling POST request')
         uri = request_line.split(" ")[1]
         if not (uri.startswith('/upload') or uri.startswith('/delete')):
@@ -466,6 +439,7 @@ class Server:
             self.end_response_line()
             self.end_response_headers()
 
+
         elif uri.startswith('/delete'):
             # 检测头部中是否包含 ? path
             if ('?' not in uri or 'path' not in uri):
@@ -510,8 +484,7 @@ class Server:
             self.end_response_headers()
 
     def handle_head_request(self, request, connection):
-        request_line, request_header, request_payload = self.split_request(
-            request)
+        request_line, request_header, request_payload = self.split_request(request)
         request_payload = request_payload.strip()
         print('Handling POST request')
 
@@ -557,8 +530,7 @@ class Server:
 
     # 增加一个回复header
     def create_response_header(self, header, value):
-        self.response_headers = self.response_headers + \
-            (f"{header}: {value}\r\n")
+        self.response_headers = self.response_headers + (f"{header}: {value}\r\n")
 
     # 结束headers的编辑
     def end_response_headers(self):
@@ -567,8 +539,7 @@ class Server:
             self.flush_headers()
             self.response_headers = f''
         else:
-            print(
-                "Error: Response headers should be sent after response line has been sent")
+            print("Error: Response headers should be sent after response line has been sent")
 
     # encode and send headers
     def flush_headers(self):
@@ -606,16 +577,14 @@ class Server:
         temp_cookie_lifetime = datetime.datetime.utcnow() + self.cookie_lifetime
         self.cookie_to_lifetime[temp_cookie] = temp_cookie_lifetime
         # 编辑Set-Cookie header
-        self.create_response_header(
-            'Set-Cookie', f'session-id={temp_cookie};Expires={temp_cookie_lifetime}')
+        self.create_response_header('Set-Cookie', f'session-id={temp_cookie};Expires={temp_cookie_lifetime}')
 
     # add simple authentication function for this server following rfc7235
     def authenticate(self, request, connection):
         # Authenticate the client request
         authorization = self.get_request_header(AUT)
         if authorization:
-            username, password = base64.b64decode(
-                authorization.split(' ')[1]).decode('utf-8').split(':')
+            username, password = base64.b64decode(authorization.split(' ')[1]).decode('utf-8').split(':')
 
             file_path = 'userData.json'
             credentials = self.read_credentials_from_json(file_path)
@@ -639,14 +608,40 @@ class Server:
         else:
             # request中没有authorization信息
             self.create_response_line(401, "Unauthorized")
-            self.create_response_header(
-                'WWW-Authenticate', 'Basic realm="Authorization Required"')
+            self.create_response_header('WWW-Authenticate', 'Basic realm="Authorization Required"')
             self.create_response_header('Connection', 'keep-alive')
             self.create_response_header('Content-Length', '0')
             self.end_response_line()
             self.end_response_headers()
             # print("缺少Aut信息")
             return False
+
+    def rsa_encrypt(self, data):
+        cipher_rsa = PKCS1_OAEP.new(RSA.import_key(self.rsa_public_key))
+        return cipher_rsa.encrypt(data)
+    
+    def rsa_decrypt(self, data):
+        cipher_rsa = PKCS1_OAEP.new(RSA.import_key(self.rsa_private_key))
+        return cipher_rsa.decrypt(data)
+
+    def set_aes_key(self, aes_key, iv):
+        assert self.aes_key == None
+        self.aes_key = aes_key
+        self.iv = iv
+    
+    def aes_encrypt(self, data):
+        self.aes_cipher = AES.new(self.aes_key, AES.MODE_CBC, iv=self.iv)
+        ciphertext = self.aes_cipher.encrypt(pad(data, AES.block_size))
+        return ciphertext
+    
+    def aes_decrypt(self, data):
+        self.aes_cipher = AES.new(self.aes_key, AES.MODE_CBC, iv=self.iv)
+        decrypted_message = unpad(self.aes_cipher.decrypt(data), AES.block_size)
+        return decrypted_message
+    
+    def get_rsa_public_key(self):
+        return self.rsa_public_key
+
 
 
 def main():
