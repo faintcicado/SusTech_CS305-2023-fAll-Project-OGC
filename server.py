@@ -111,7 +111,7 @@ class Server:
         # authenticate and cookie
         # 检查请求头中是否存在cookie:
 
-        # if not ('mozilla' in self.get_request_header('User-Agent').lower()):
+        if not ('mozilla' in self.get_request_header('User-Agent').lower()):
             if self.get_request_header('Cookie'):
                 session_id = self.get_request_header('Cookie')[11:]
                 if session_id in self.cookie_to_username:
