@@ -151,11 +151,12 @@ def testing(num):
 if __name__ == '__main__':
     print("====================\r\nplease select test num\r\ninput 0 to exit\r\n====================\r\n")
     print()
-    path = Path('./data/client1/a.py')
-    print(path.exists())
+    original_list = ['200-1000', '2000-6576', '19000-']
+    result_list = [item.split('-') if '-' in item else [item, ''] for item in original_list]
+    print(result_list)
+    # result = list(map(int, result_list[3]))
+    # print(result)
 
-
-    print(None == 1)
 
     while True:
         num = input('=====================\r\n')
