@@ -52,7 +52,7 @@ class Server:
     # cookies -> clients
     cookie_to_username = {}
     cookie_to_lifetime = {}
-    cookie_lifetime = datetime.timedelta(seconds=5)
+    cookie_lifetime = datetime.timedelta(hours=5)
     curuser = {}
 
     def __init__(self, host, port):
@@ -69,7 +69,6 @@ class Server:
 
     def run(self):
         # 等待client链接
-
         while True:
             # 返回一个用来传输数据的socket -> connection
             connection, address = self.server_socket.accept()
@@ -87,8 +86,13 @@ class Server:
             connection.close()
 
     def handle_request(self, connection):
-        request = b""
+        self.curuser = {}
+        self.request_headers = {}
+        self.response_line = f''
+        self.response_headers = f''
+        self.response_payload = b''
 
+        request = b""
         # while True:
         # 阻塞程序，持续接收数据
         chunk = connection.recv(4096)
@@ -110,30 +114,32 @@ class Server:
 
         # authenticate and cookie
         # 检查请求头中是否存在cookie:
-
-        if not ('mozilla' in self.get_request_header('User-Agent').lower()):
-            if self.get_request_header('Cookie'):
-                session_id = self.get_request_header('Cookie')[11:]
-                if session_id in self.cookie_to_username:
-                    if session_id in self.cookie_to_lifetime and datetime.datetime.utcnow() > self.cookie_to_lifetime[
-                        session_id]:
-                        pass
-                    else:
-                        print("\ncookie过期 返回401 或者 不存在该cookie(cookie_to_lifetime)")
-                        self.create_response_line(401, 'Unauthorized')
-                        self.cookie_to_lifetime.pop(session_id)
-                        self.cookie_to_username.pop(session_id)
-                        return False
-                # invalid cookie
+        cookie_check = False
+        if self.get_request_header('Cookie'):
+            session_id = self.get_request_header('Cookie')[11:]
+            if session_id in self.cookie_to_username:
+                if datetime.datetime.utcnow() < self.cookie_to_lifetime[session_id]:
+                    cookie_check = True
                 else:
-                    self.create_response_line(401, 'Unauthorized')
-                    self.create_response_header('Content-Length', '0')
-                    self.end_response_line()
-                    self.end_response_headers()
-                    return False
+                    # cookie 过期
+                    cookie_check = False
+                    # self.create_response_line(401, 'Unauthorized')
+                    # self.cookie_to_lifetime.pop(session_id)
+                    # self.cookie_to_username.pop(session_id)
+                    # return False
 
-            # 请求头中不存在 Cookie header
-            elif (not self.authenticate(request, connection)):
+            # 不存在该cookie
+            else:
+                cookie_check = False
+                # self.create_response_line(401, 'Unauthorized')
+                # self.create_response_header('Content-Length', '0')
+                # self.end_response_line()
+                # self.end_response_headers()
+                # return False
+
+        # 请求头中不存在 Cookie header 或者 cookie 认证失败
+        if not cookie_check:
+            if (not self.authenticate(request, connection)):
                 # 认证成功后set-cookie
                 return False
 
@@ -183,12 +189,13 @@ class Server:
         if "?" in uri:
             # userPath = 11912113/ query_string = SUSTech-HTTP=0
             userPath, query_string = uri.split("?")
-
+            uri = userPath
             # query_string = 0
             SUSTech, query_code = query_string.split("=")
 
             # invalid query string
             if not (SUSTech == 'SUSTech-HTTP'):
+                # 异常的查询信息
                 self.create_response_line(400, 'Bad Request')
                 self.create_response_header('Content-Length', '0')
                 self.end_response_line()
@@ -196,70 +203,87 @@ class Server:
 
         # 不包含 SUSTech-HTTP=的情况
 
-        if uri == "/":
-            temp = "index.html"
-            file_path = pathlib.Path(__file__).parent / temp
-            print('file_path: %s' % file_path)
-            self.send_file(file_path, connection)
+        # if uri == "/":
+        #     temp = "data/"
+        #     file_path = pathlib.Path(__file__).parent / temp
+        #     # print('file_path: %s' % file_path)
+        #     # self.send_file(file_path, connection)
+        #     html = self.render_dir_html(file_path)
+        #     # save  the html into temp.html
+        #     with open('temp.html', 'w') as f:
+        #         f.write(html)
+        #     self.send_file("temp.html", connection,isHead)
+        #
+        # elif uri == "/teapot":
+        #     temp = "teapot.html"
+        #     file_path = pathlib.Path(__file__).parent / temp
+        #     print('file_path: %s' % file_path)
+        #     self.send_file(file_path, connection,isHead)
+        #     # write a elif when uri begin with "/data/" or "data/" or "/data" or "data"
+        #
+        # elif uri == "/favicon.ico":
+        #     temp = "favicon.ico"
+        #     file_path = pathlib.Path(__file__).parent / temp
+        #     print('file_path: %s' % file_path)
+        #     self.send_file(file_path, connection,isHead)
 
-        elif uri == "/teapot":
-            temp = "teapot.html"
-            file_path = pathlib.Path(__file__).parent / temp
-            print('file_path: %s' % file_path)
-            self.send_file(file_path, connection)
-            # write a elif when uri begin with "/data/" or "data/" or "/data" or "data"
-
-        elif uri == "/favicon.ico":
-            temp = "favicon.ico"
-            file_path = pathlib.Path(__file__).parent / temp
-            print('file_path: %s' % file_path)
-            self.send_file(file_path, connection)
-
-        elif uri.startswith('/'):
-            if uri.startswith('/'):  # remove the leading '/'
-                temp = uri[1:]
+        if uri.startswith('/'):
             temp_path = str(pathlib.Path(__file__).parent)
-            file_path = temp_path + '/data/'
-            file_path = file_path + self.curuser['username'] + '/' +temp
+            file_path = temp_path + '/data'
+            file_path = file_path +  uri
             file_path = pathlib.Path(file_path)
-            print('file_path: %s' % file_path)
+
             # 检查里路径里是否存在该文件
             if file_path.exists():
+                # 如果是file
                 if file_path.is_file():
-                    # 检测目标文件类型
+                    # 检测文件类型
                     content_type = mimetypes.guess_type(file_path)[0]
                     content_size = os.path.getsize(file_path)
                     if content_type is None:
-                        # 通用的二进制文件类型
+                        # 默认的文件类型
                         content_type = "application/octet-stream"
                     with open(file_path, "rb") as f:
                         self.create_response_line(200,'OK')
                         self.create_response_header('Content-Type', content_type)
                         self.create_response_header('Content-Length',content_size)
-                        self.create_response_payload(f.read())
                         self.end_response_line()
                         self.end_response_headers()
-                        self.end_response_payload()
+                        if not isHead:
+                            self.create_response_payload(f.read())
+                            self.end_response_payload()
+
+                # 如果是dir
                 elif file_path.is_dir():
-                    # # 检测目标文件类型
-                    # content_type = mimetypes.guess_type(file_path)[0]
-                    # if content_type is None:
-                    #     # 通用的二进制文件类型
-                    #     content_type = "application/octet-stream"
-                    if query_code == 1000:
+                    # SUSTech-HTTP = 1 case:
+
+                    if query_code == '1':
+                        list = self.get_dir_list(file_path)
                         # 读取目录下的文件
-                        pass
+                        self.create_response_line(200, 'OK')
+                        self.create_response_header('Content-Type', 'application/octet-stream')
+                        self.create_response_header('Content-Length', len(str(list).encode()))
+                        # self.create_response_payload(str(list))
+                        self.end_response_line()
+                        self.end_response_headers()
+                        # self.end_response_payload()
+                        if not isHead:
+                            self.create_response_payload(str(list))
+                            self.end_response_payload()
 
-
-                    #  query_code = 0 或者 default
+                    #  SUSTech-HTTP = 0 or default case:
                     else:
                         html = self.render_dir_html(file_path)
                         # save  the html into temp.html
                         with open('temp.html', 'w') as f:
                             f.write(html)
-                        self.send_file("temp.html", connection)
+                        self.send_file("temp.html", connection,isHead)
                 else:
-                    # send 404 not found
+                    self.create_response_line(404, "Not found")
+                    self.create_response_header("Content-Type", "application/octet-stream")
+                    self.create_response_header("Content-Length", "0")
+                    self.end_response_line()
+                    self.end_response_headers()
                     return
             else:
                 # 文件不存在
@@ -271,6 +295,7 @@ class Server:
                 return
 
         else:
+            # uri 不以/开头的情况
             self.create_response_line(404, "Not found")
             self.create_response_header("Content-Type", "application/octet-stream")
             self.create_response_header("Content-Length", "0")
@@ -278,15 +303,17 @@ class Server:
             self.end_response_headers()
             return
 
-    def send_file(self, file_path, connection):
+    def send_file(self, file_path, connection, isHead):
         with open(file_path, "rb") as f:
             self.create_response_line(200, "OK")
             self.create_response_header("Content-Length", os.path.getsize(file_path))
             self.create_response_header("Content-Type", mimetypes.guess_type(file_path)[0])
-            self.create_response_payload(f.read())
+
             self.end_response_line()
             self.end_response_headers()
-            self.end_response_payload()
+            if not isHead:
+                self.create_response_payload(f.read())
+                self.end_response_payload()
 
     def send_response_header(self, header, value):
         self.create_response_header(header, value)
@@ -552,7 +579,6 @@ class Server:
     # add simple authentication function for this server following rfc7235
     def authenticate(self, request, connection):
         # Authenticate the client request
-        request_line, request_header, request_payload = self.split_request(request)
         authorization = self.get_request_header(AUT)
         if authorization:
             username, password = base64.b64decode(authorization.split(' ')[1]).decode('utf-8').split(':')
@@ -567,6 +593,7 @@ class Server:
 
                 print(f"User:{username} Authentication success")
                 return True
+
             else:
                 # 登录信息不存在userData.json中,或者密码错误
                 self.create_response_line(401, "Unauthorized")
@@ -578,11 +605,12 @@ class Server:
         else:
             # request中没有authorization信息
             self.create_response_line(401, "Unauthorized")
-            self.create_response_header('WWW-Authenticated', 'Basic realm="Authorization Required"')
+            self.create_response_header('WWW-Authenticate', 'Basic realm="Authorization Required"')
+            self.create_response_header('Connection', 'keep-alive')
             self.create_response_header('Content-Length', '0')
             self.end_response_line()
             self.end_response_headers()
-            print("缺少Aut信息")
+            # print("缺少Aut信息")
             return False
 
 
