@@ -2,20 +2,15 @@
 import argparse
 import socket
 import mimetypes
-import io
 import sys
-import time
 import datetime
 import os
-import signal
 import threading
 import pathlib
 import traceback
 import json
 import secrets
 import base64
-import shutil
-import _thread
 from pathlib import Path
 # from cryptography import RSA
 
@@ -42,7 +37,7 @@ CK = 'Cookie'
 AUT = 'Authorization'
 TE = 'Transfer-Encoding'
 CR = 'Content-Range'
-CHUNK_SIZE = 16
+CHUNK_SIZE = 1024
 MYBOUNDARY = 'faintcicado'
 
 class Server:
@@ -86,7 +81,8 @@ class Server:
         except Exception:
             traceback.print_exc(file=sys.stderr)
         finally:
-            connection.close()
+            with threading.Lock():
+                connection.close()
 
     def handle_request(self, connection):
         self.curuser = {}
@@ -161,6 +157,8 @@ class Server:
             self.end_response_headers()
 
         # 检测是否要关闭链接
+        if not self.get_request_header(CON):
+            return False
         if self.get_request_header(CON).lower() == 'keep-alive':
             return True
         else:
@@ -205,6 +203,24 @@ class Server:
                 self.end_response_line()
                 self.end_response_headers()
 
+        if uri == '/teapot':
+            temp_path = str(pathlib.Path(__file__).parent)
+            file_path = temp_path + '/data'
+            file_path = file_path + uri + '.html'
+            file_path = pathlib.Path(file_path)
+            content_type = mimetypes.guess_type(file_path)[0]
+            content_size = os.path.getsize(file_path)
+            if content_type is None:
+                # 默认的文件类型
+                content_type = "application/octet-stream"
+            self.create_response_line(200, 'OK')
+            self.create_response_header('Content-Type', content_type)
+            self.create_response_header('Content-Length', content_size)
+            self.end_response_line()
+            self.end_response_headers()
+            with open(file_path,'rb') as f:
+                self.create_response_payload(f.read())
+
         if uri.startswith('/'):
             temp_path = str(pathlib.Path(__file__).parent)
             file_path = temp_path + '/data'
@@ -228,18 +244,25 @@ class Server:
                     right_range = None
                     if self.get_request_header('Range'):
                         # Range: bytes=200-1000, 2000-6576, 19000-
+                        # 整个header的value部分
                         break_point_header = self.get_request_header('Range')
+                        transmission_range = ''
+                        if '=' in break_point_header:
+                            transmission_type, transmission_range = break_point_header.split('=')
+                            range_list_raw = transmission_range.split(',')
+                        else:
+                            range_list_raw = break_point_header.split(',')
                         break_point_transmission = True
+                        if transmission_range == '0-':
+                            break_point_transmission = False
 
-                        # transmission_type, range = break_point_header.split('=')
-                        range_list_raw = break_point_header.split(',')
                         range_list = [item.split('-') if '-' in item else [item, ''] for item in range_list_raw]
                         for i in range_list:
                             if i[1] == '':
                                 i[0] = int(i[0])
                             else:
                                 i[0],i[1] = int(i[0]),int(i[1])
-                        print(range_list_raw)
+
                         for i in range_list:
                         #   检测非法range
                             left_range,right_range = i[0],i[1]
@@ -257,9 +280,6 @@ class Server:
                                     self.end_response_headers()
                                     return False
 
-
-
-
                     if query_string == 'chunked' and query_code == 1:
                     # chunked 传输
                         with open(file_path, "r") as f:
@@ -267,6 +287,8 @@ class Server:
                             self.create_response_header('Content-Type', content_type)
                             self.create_response_header('Content-Length', content_size)
                             self.create_response_header('Transfer-Encoding', 'chunked')
+                            self.end_response_line()
+                            self.end_response_headers()
                             if not isHead:
                                 while True:
                                     chunk = f.read(CHUNK_SIZE)
@@ -275,22 +297,43 @@ class Server:
                                     temp = str(len(chunk)) + '\r\n' + chunk + '\r\n'
                                     self.create_response_payload(temp)
                                 self.create_response_payload('0\r\n\r\n')
-                                self.end_response_line()
-                                self.end_response_headers()
-                                self.end_response_payload()
+                                # self.end_response_payload()
                     # 正常传输
                     else:
                         # 不断点传输
                         if not break_point_transmission:
-                            with open(file_path, "rb") as f:
-                                self.create_response_line(200,'OK')
-                                self.create_response_header('Content-Type', content_type)
-                                self.create_response_header('Content-Length',content_size)
-                                self.end_response_line()
-                                self.end_response_headers()
-                                if not isHead:
-                                    self.create_response_payload(f.read())
-                                    self.end_response_payload()
+                            if content_size <=1073741824:
+                                with open(file_path, "rb") as f:
+                                    self.create_response_line(200,'OK')
+                                    self.create_response_header('Content-Type', content_type)
+                                    self.create_response_header('Content-Length',content_size)
+                                    # self.create_response_header('Content-Disposition', 'attachment')
+                                    self.end_response_line()
+                                    self.end_response_headers()
+                                    if not isHead:
+                                        self.connection.sendall(f.read())
+                                        # self.create_response_payload(f.read())
+                                        # self.end_response_payload()
+                            # 大于1G自动使用chunked transfer
+                            else:
+                                with open(file_path, "rb") as f:
+                                    self.create_response_line(200, 'OK')
+                                    self.create_response_header('Content-Type', content_type)
+                                    self.create_response_header('Content-Length', content_size)
+                                    self.create_response_header('Transfer-Encoding', 'chunked')
+                                    self.create_response_header('Content-Disposition','attachment')
+                                    self.end_response_line()
+                                    self.end_response_headers()
+                                    if not isHead:
+                                        while True:
+                                            chunk = f.read(CHUNK_SIZE)
+                                            if not chunk:
+                                                break
+                                            # temp = str(len(chunk)) + b'\r\n' + chunk + b'\r\n'
+                                            temp = b"%X\r\n%s\r\n" % (len(chunk), chunk)
+                                            self.connection.sendall(temp)
+                                        self.create_response_payload('0\r\n\r\n')
+                                        # self.end_response_payload()
                         # 断点传输 单个区域
                         elif len(range_list) == 1:
                             range_temp = range_list[0]
@@ -306,10 +349,11 @@ class Server:
                             self.end_response_headers()
                             if not isHead:
                                 self.send_file_by_range(file_path,range_temp[0],range_temp[1])
-                                self.end_response_payload()
+                                # self.end_response_payload()
                         elif len(range_list) > 1:
                             self.create_response_line(206, 'Partial Content')
                             self.create_response_header('Content-Type', f'multipart/byteranges; boundary={MYBOUNDARY}')
+
                             # 计算文件长度
                             content_length = 0
                             for i in range_list:
@@ -317,25 +361,25 @@ class Server:
                                 if i[1] == '':
                                     right_temp = content_size
                                 content_length += right_temp - left_temp + 1
-
-
-                            for j in range(len(range_list)):
-                                # 判断''的情况
-                                left_range_temp = range_list[j][0]
-                                right_range_temp = range_list[j][1]
-                                if right_range_temp == '':
-                                    right_range_temp = content_size
-                                #   在表头加boundary
-                                if j == 0:
-                                    self.send_multi_file_by_range(file_path,content_type,content_size,left_range_temp,right_range_temp,True)
-                                else:
-                                    self.send_multi_file_by_range(file_path, content_type, content_size,left_range_temp, right_range_temp, False)
-
+                            if not isHead:
+                                for j in range(len(range_list)):
+                                    # 判断''的情况
+                                    left_range_temp = range_list[j][0]
+                                    right_range_temp = range_list[j][1]
+                                    if right_range_temp == '':
+                                        right_range_temp = content_size
+                                    #   在表头加boundary
+                                    if j == 0:
+                                        self.send_multi_file_by_range(file_path,content_type,content_size,left_range_temp,right_range_temp,True,True)
+                                    elif j == len(range_list) -1:
+                                        self.send_multi_file_by_range(file_path, content_type, content_size,left_range_temp, right_range_temp, False,False)
+                                    else:
+                                        self.send_multi_file_by_range(file_path, content_type, content_size,
+                                                                      left_range_temp, right_range_temp, False, True)
                             self.create_response_header('Content-Length', len(self.response_payload))
                             self.end_response_line()
                             self.end_response_headers()
-                            if not isHead:
-                                self.end_response_payload()
+                            self.end_response_payload()
 
 
 
@@ -356,11 +400,11 @@ class Server:
                         # self.end_response_payload()
                         if not isHead:
                             self.create_response_payload(str(list))
-                            self.end_response_payload()
+                            # self.end_response_payload()
 
                     #  SUSTech-HTTP = 0 or default case:
                     else:
-                        html = self.render_dir_html(file_path)
+                        html = self.render_dir_html_delete(file_path)
                         # save  the html into temp.html
                         with open('temp.html', 'w') as f:
                             f.write(html)
@@ -390,7 +434,7 @@ class Server:
             self.end_response_headers()
             return
 
-    def send_multi_file_by_range(self,filepath,content_type,content_size,left_range,right_range,add_boundary_at_beginning):
+    def send_multi_file_by_range(self,filepath,content_type,content_size,left_range,right_range,add_boundary_at_beginning,add_blank_space_at_the_end):
         if right_range == '': right_range = content_size
         payload_to_write = ''
         # 只有第一次需要调取
@@ -403,11 +447,17 @@ class Server:
             content = f.read(right_range - left_range + 1)
             payload_to_write = payload_to_write + content
             payload_to_write = payload_to_write + '\r\n'
-        payload_to_write = payload_to_write + f'--{MYBOUNDARY}\r\n'
-        self.create_response_payload(payload_to_write)
+        if add_blank_space_at_the_end:  payload_to_write = payload_to_write + f'--{MYBOUNDARY}\r\n'
+        else:payload_to_write = payload_to_write + f'--{MYBOUNDARY}'
+        self.create_response_payload_not_send(payload_to_write)
 
-
-        pass
+    def create_response_payload_not_send(self,payload):
+        if isinstance(payload, str):
+            self.response_payload += payload.encode('utf-8')
+        elif isinstance(payload, bytes):
+            self.response_payload += payload
+        else:
+            raise ValueError("Invalid payload type. Expected string or bytes.")
 
 
     # 只加入payload，不传输
@@ -419,7 +469,8 @@ class Server:
         with open(filepath,'rb') as f:
             f.seek(left_range)
             content = f.read(right_range - left_range + 1)
-            self.create_response_payload(content)
+            # self.create_response_payload(content)
+            self.connection.sendall(content)
 
     def send_file(self, file_path, connection, isHead):
         with open(file_path, "rb") as f:
@@ -431,7 +482,7 @@ class Server:
             self.end_response_headers()
             if not isHead:
                 self.create_response_payload(f.read())
-                self.end_response_payload()
+                # self.end_response_payload()
 
     def send_response_header(self, header, value):
         self.create_response_header(header, value)
@@ -461,6 +512,32 @@ class Server:
                 file += "/"
             html += f"<a href='{file}'>{file}</a><br>"
         html += "</body></html>"
+        return html
+
+    def render_dir_html_delete(self, dir_path):
+        html = "<html><head><title>Directory Listing</title></head><body>"
+        if dir_path != "/":
+            html += "<a href='../'>../</a><br>"
+        for file in os.listdir(dir_path):
+            if os.path.isdir(os.path.join(dir_path, file)):
+                file += "/"
+            html += f"<a href='{file}'>{file}</a> <button onclick=\"deleteFile('{file}')\">Delete</button><br>"
+        html += "</body></html>"
+
+        # 添加JavaScript函数，用于向HTTP服务器发送删除文件的请求
+        html += """
+        <script>
+        function deleteFile(file) {
+            fetch('/delete', {
+                method: 'POST',
+                body: JSON.stringify({file: file})
+            }).then(response => {
+                // 处理删除请求的响应
+            });
+        }
+        </script>
+        """
+
         return html
 
     def handle_post_request(self, request, connection):
@@ -598,31 +675,6 @@ class Server:
             self.end_response_line()
             self.end_response_headers()
 
-    def handle_head_request(self, request, connection):
-        request_line, request_header, request_payload = self.split_request(request)
-        request_payload = request_payload.strip()
-        print('Handling POST request')
-
-        uri = request_line.split(" ")[1]
-        if uri == "/":
-            uri = "index.html"
-        file_path = pathlib.Path(__file__).parent / uri
-        print('file_path: %s' % file_path)
-
-        # 检查里路径里是否存在该文件
-        if not file_path.is_file():
-            connection.send(self.create_response(404, "File Not Found"))
-            return
-        # 检测目标文件类型
-        content_type = mimetypes.guess_type(file_path)[0]
-        if content_type is None:
-            # 通用的二进制文件类型
-            content_type = "application/octet-stream"
-        with open(file_path, "rb") as f:
-            connection.send(self.create_response(200, "OK", content_type))
-
-        if self.request_header_extractor(request_header, CON) == 'close':
-            connection.close()
 
     # 将request区分为三个部分
     def split_request(self, request):
@@ -668,9 +720,9 @@ class Server:
 
     def create_response_payload(self, payload):
         if isinstance(payload, str):
-            self.response_payload += payload.encode('utf-8')
+            self.connection.sendall(payload.encode('utf-8'))
         elif isinstance(payload, bytes):
-            self.response_payload += payload
+            self.connection.sendall(payload)
         else:
             raise ValueError("Invalid payload type. Expected string or bytes.")
 

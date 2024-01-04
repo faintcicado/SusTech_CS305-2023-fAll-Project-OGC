@@ -1,1 +1,12 @@
-<html><head><title>Directory Listing</title></head><body><a href='../'>../</a><br><a href='a.txt'>a.txt</a><br><a href='client1/'>client1/</a><br><a href='Example.png'>Example.png</a><br><a href='example.txt'>example.txt</a><br><a href='favicon.ico'>favicon.ico</a><br><a href='file_example_MP3_5MG.mp3'>file_example_MP3_5MG.mp3</a><br><a href='teapot-image.png'>teapot-image.png</a><br><a href='teapot.html'>teapot.html</a><br></body></html>
+<html><head><title>Directory Listing</title></head><body><a href='../'>../</a><br><a href='a.txt'>a.txt</a> <button onclick="deleteFile('a.txt')">Delete</button><br><a href='client1/'>client1/</a> <button onclick="deleteFile('client1/')">Delete</button><br><a href='Example.png'>Example.png</a> <button onclick="deleteFile('Example.png')">Delete</button><br><a href='example.txt'>example.txt</a> <button onclick="deleteFile('example.txt')">Delete</button><br><a href='favicon.ico'>favicon.ico</a> <button onclick="deleteFile('favicon.ico')">Delete</button><br><a href='file_example_MP3_5MG.mp3'>file_example_MP3_5MG.mp3</a> <button onclick="deleteFile('file_example_MP3_5MG.mp3')">Delete</button><br><a href='teapot-image.png'>teapot-image.png</a> <button onclick="deleteFile('teapot-image.png')">Delete</button><br><a href='teapot.html'>teapot.html</a> <button onclick="deleteFile('teapot.html')">Delete</button><br><a href='test.mp4'>test.mp4</a> <button onclick="deleteFile('test.mp4')">Delete</button><br></body></html>
+        <script>
+        function deleteFile(file) {
+            fetch('/delete', {
+                method: 'POST',
+                body: JSON.stringify({file: file})
+            }).then(response => {
+                // ����ɾ���������Ӧ
+            });
+        }
+        </script>
+        

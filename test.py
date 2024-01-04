@@ -86,7 +86,7 @@ def testing(num):
 
     elif num == 10:
         # 3.1
-        files = {"firstFile": open('tmp/a.txt', "rb")}
+        files = {"firstFile": open('tmp/a.py', "rb")}
 
         data = {}
         headers = {"Authorization": "Basic Y2xpZW50MToxMjM="}
@@ -152,11 +152,8 @@ def testing(num):
 if __name__ == '__main__':
     print("====================\r\nplease select test num\r\ninput 0 to exit\r\n====================\r\n")
     print()
-    original_list = ['200-1000', '2000-6576', '19000-']
-    result_list = [item.split('-') if '-' in item else [item, ''] for item in original_list]
-    print(result_list)
-    # result = list(map(int, result_list[3]))
-    # print(result)
+
+    print(b'16')
 
 
     while True:
