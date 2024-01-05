@@ -16,9 +16,14 @@ import base64
 import shutil
 import _thread
 from pathlib import Path
+import crypto
+from crypto.Cipher import PKCS1_OAEP
+from crypto.PublicKey import RSA
+from crypto.Util.Padding import pad, unpad
+from cryptography.hazmat.primitives.ciphers.algorithms import AES
 
 
-import PyCryptodome
+# import PyCryptodome
 
 
 def parse_args():
