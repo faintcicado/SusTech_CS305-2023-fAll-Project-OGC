@@ -91,13 +91,23 @@ class Server:
         self.response_headers = f''
         self.response_payload = b''
 
-        request = b""
-        # while True:
-        # 阻塞程序，持续接收数据
-        chunk = connection.recv(4096)
-        request += chunk
-        if request == b'': return False
+        # request = b""
+        # # while True:
+        # # 阻塞程序，持续接收数据
+        # chunk = connection.recv(4096)
+        # request += chunk
+        # if request == b'':
+        #     return False
 
+        request = b""
+        while True:
+            chunk = connection.recv(1024)
+            request += chunk
+            if chunk.endswith(b""):
+                break
+        # return request.decode("utf-8")
+        if request == b'':
+            return False
         request = request.decode()
 
         self.request_line_sended = False
@@ -404,7 +414,7 @@ class Server:
 
                     #  SUSTech-HTTP = 0 or default case:
                     else:
-                        html = self.render_dir_html_delete(file_path)
+                        html = self.render_dir_html(file_path)
                         # save  the html into temp.html
                         with open('temp.html', 'w') as f:
                             f.write(html)
@@ -499,8 +509,6 @@ class Server:
                 file += "/"
             dir_list.append(file)
         return dir_list
-        
-
 
     def render_dir_html(self, dir_path):
         # to be done
@@ -514,31 +522,30 @@ class Server:
         html += "</body></html>"
         return html
 
-    def render_dir_html_delete(self, dir_path):
-        html = "<html><head><title>Directory Listing</title></head><body>"
-        if dir_path != "/":
-            html += "<a href='../'>../</a><br>"
-        for file in os.listdir(dir_path):
-            if os.path.isdir(os.path.join(dir_path, file)):
-                file += "/"
-            html += f"<a href='{file}'>{file}</a> <button onclick=\"deleteFile('{file}')\">Delete</button><br>"
-        html += "</body></html>"
-
-        # 添加JavaScript函数，用于向HTTP服务器发送删除文件的请求
-        html += """
-        <script>
-        function deleteFile(file) {
-            fetch('/delete', {
-                method: 'POST',
-                body: JSON.stringify({file: file})
-            }).then(response => {
-                // 处理删除请求的响应
-            });
-        }
-        </script>
-        """
-
-        return html
+    # def render_dir_html_delete(self, dir_path):
+    #     html = "<html><head><title>Directory Listing</title></head><body>"
+    #     if dir_path != "/":
+    #         html += "<a href='../'>../</a><br>"
+    #     for file in os.listdir(dir_path):
+    #         if os.path.isdir(os.path.join(dir_path, file)):
+    #             file += "/"
+    #         html += f"<a href='{file}'>{file}</a> <button onclick=\"deleteFile('{file}')\">Delete</button><br>"
+    #     html += "</body></html>"
+    #
+    #     # 添加JavaScript函数，用于向HTTP服务器发送删除文件的请求
+    #     html += """
+    #     <script>
+    #     function deleteFile(file) {
+    #         fetch('/delete', {
+    #             method: 'POST',
+    #             body: JSON.stringify({file: file})
+    #         }).then(response => {
+    #             // 处理删除请求的响应
+    #         });
+    #     }
+    #     </script>
+    #     """
+    #     return html
 
     def handle_post_request(self, request, connection):
         request_line, request_header, request_payload = self.split_request(request)

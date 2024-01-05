@@ -152,8 +152,8 @@ def testing(num):
 if __name__ == '__main__':
     print("====================\r\nplease select test num\r\ninput 0 to exit\r\n====================\r\n")
     print()
-
-    print(b'16')
+    chunks = ['abc','cd']
+    print(''.join(chunks))
 
 
     while True:
