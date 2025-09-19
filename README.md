@@ -1,15 +1,14 @@
 # SUSTech-CS305-2023-Fall-Project
 
 # TO-DO
-- [ ] 参数分割  
+- [ ] arguments
 - [ ] Basic HTTP Server
-- [ ] 手搓状态码  
-- [ ] 支持各种Request Method  
+- [ ] status codes
+- [ ] Request Methods
 - [ ] GET
 - [ ] HEAD
 - [ ] POST
-- [ ] 键值对 header包含内容 {header -> value} where header-name is casesensitive.
-- [ ] 状态码
+- [ ] header包含内容 {header -> value} where header-name is casesensitive.
 - [ ] binary data <-> HTTP response object  
 - [ ] persit connection 10:kiss: 维护header中的connection字段
 - [ ] Support multiple clients 5:kiss: 线程池
@@ -21,5 +20,6 @@
 
 ## Bonus
 - [ ] Breadkpoint Transfer :kiss:
-- [ ] 加速下载 :kiss:
-- [ ] 加密 实现https :kiss:
+- [ ] Download speedup :kiss:
+- [ ] Https :kiss:
+
